@@ -1,0 +1,19 @@
+### Sample Queries
+
+**"What should I watch tonight?"**
+*(requires understanding the user's taste)*
+
+**"I want a dark psychological thriller with a twist."**
+*(content search + quality filtering)*
+
+**"What do people with similar taste to mine think about Pulp Fiction?"**
+*(find similar users + aggregate their ratings)*
+
+**"Why do you think I'd like that?"**
+*(explain the recommendation using the user's rating history + movie data)*
+
+**"I liked Toy Story, but I'm tired of animated movies — what else?"**
+*(use the user's history + apply the given constraints)*
+
+**"What's my blind spot? What genres am I missing?"**
+*(analyze the user's rating patterns and identify underrepresented genres)*
