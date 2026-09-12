@@ -1,18 +1,14 @@
+## 📊 Dataset Structure
+
 ```mermaid
 erDiagram
 
     MOVIES {
         int movieId PK
         string title
-        string genres
-    }
-
-    MOVIES_WITH_PLOTS {
-        int movieId PK, FK
-        string title
         int year
         string genres
-        text plot
+        string plot
     }
 
     RATINGS {
@@ -20,10 +16,6 @@ erDiagram
         int movieId FK
         float rating
         int timestamp
-    }
-
-    USERS {
-        int userId PK
     }
 
     TAGS {
@@ -36,13 +28,16 @@ erDiagram
     LINKS {
         int movieId FK
         int imdbId
-        int tmdbId
+        float tmdbId
     }
 
-    MOVIES ||--o| MOVIES_WITH_PLOTS : "movieId"
-    MOVIES ||--o{ RATINGS : "movieId"
-    USERS ||--o{ RATINGS : "userId"
-    MOVIES ||--o{ TAGS : "movieId"
-    USERS ||--o{ TAGS : "userId"
-    MOVIES ||--o{ LINKS : "movieId"
-```
+    USERS {
+        int userId PK
+    }
+
+    USERS ||--o{ RATINGS : rates
+    USERS ||--o{ TAGS : creates
+
+    MOVIES ||--o{ RATINGS : receives
+    MOVIES ||--o{ TAGS : has
+    MOVIES ||--|| LINKS : maps_to
