@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, TypedDict
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
+from .llm import ANSWER_SYSTEM_PROMPT, create_gemini_llm
 from .tools import MovieToolbox
 
 SYSTEM_PROMPT = """You are a Movie Discovery Assistant. Use only supplied tool evidence for
@@ -28,8 +31,9 @@ class AgentState(TypedDict, total=False):
 class MovieAssistantGraph:
     """START → understand → plan → execute tools → collect evidence → answer → END."""
 
-    def __init__(self, toolbox: MovieToolbox) -> None:
+    def __init__(self, toolbox: MovieToolbox, llm: Any | None = None) -> None:
         self.toolbox = toolbox
+        self._llm = llm if llm is not None else create_gemini_llm()
         builder = StateGraph(AgentState)
         builder.add_node("understand_query", self._understand_query)
         builder.add_node("build_plan", self._build_plan)
@@ -128,10 +132,31 @@ class MovieAssistantGraph:
     def _collect_evidence(state: AgentState) -> dict[str, Any]:
         return {"evidence": {item["tool"]: item["output"] for item in state["tool_results"]}}
 
+    def _generate_answer(self, state: AgentState) -> dict[str, Any]:
+        """Let Gemini summarize verified evidence; retain a safe local fallback."""
+        fallback = self._grounded_answer(state)
+        if self._llm is None or any(not value.get("ok") for value in state["evidence"].values()):
+            return fallback
+        prompt = json.dumps(
+            {"user_query": state["query"], "intent": state["intent"], "plan": state["plan"], "evidence": state["evidence"]},
+            ensure_ascii=False,
+            default=str,
+        )
+        try:
+            response = self._llm.invoke([
+                SystemMessage(content=ANSWER_SYSTEM_PROMPT),
+                HumanMessage(content=f"Write the final response from this verified evidence only:\n{prompt}"),
+            ])
+            content = response.content if isinstance(response.content, str) else str(response.content)
+            return {"final_answer": content.strip() or fallback["final_answer"]}
+        except Exception:
+            # A provider/network failure must never turn into an unsupported claim.
+            return fallback
+
     @staticmethod
-    def _generate_answer(state: AgentState) -> dict[str, Any]:
+    def _grounded_answer(state: AgentState) -> dict[str, Any]:
         evidence = state["evidence"]
-        errors = [value["error"] for value in evidence.values() if not value.get("ok")]
+        errors = list(dict.fromkeys(value["error"] for value in evidence.values() if not value.get("ok")))
         if errors:
             return {"final_answer": "I can't verify this from the supplied MovieLens data: " + " ".join(errors)}
         if state["intent"] == "recommendation":
