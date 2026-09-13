@@ -38,6 +38,10 @@ class MovieRepository:
     def get_user_tags(self, user_id: int) -> tuple[Tag, ...] | None:
         return self._tags_by_user.get(user_id)
 
+    def get_user_ids(self) -> tuple[int, ...]:
+        """Return known rating users for analytics services without exposing CSV data."""
+        return tuple(self._ratings_by_user)
+
     def get_movie_ratings(self, movie_id: int) -> tuple[Rating, ...] | None:
         return self._ratings_by_movie.get(movie_id)
 
