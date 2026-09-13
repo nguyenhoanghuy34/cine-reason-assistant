@@ -48,13 +48,18 @@ class MovieRetrievalService:
         if query_vector.nnz == 0:
             return []
         scores = cosine_similarity(query_vector, self._matrix).ravel()
-        return self._rank(
+        results = self._rank(
             scores,
             top_k,
             exclude_index=None,
             decade=_decade_from_query(query),
             required_genre=self._genre_from_query(query),
         )
+        title_match = self._movie_from_title(query)
+        if title_match is not None:
+            exact = SearchResult(title_match.movie_id, title_match.title, 1.0, title_match.genres, title_match.year, title_match.plot)
+            results = [exact] + [result for result in results if result.movie_id != title_match.movie_id]
+        return results[:top_k]
 
     def find_similar_movies(self, movie_id: int, top_k: int = 10) -> list[SearchResult]:
         index = self._movie_index.get(movie_id)
@@ -91,7 +96,11 @@ class MovieRetrievalService:
         if exact:
             return exact
         normalized = title.casefold().strip()
-        return next((movie for movie in self._movies if normalized in movie.title.casefold()), None)
+        article_match = re.fullmatch(r"(the|a|an)\s+(.+)", normalized)
+        alternatives = [normalized]
+        if article_match:
+            alternatives.append(f"{article_match.group(2)}, {article_match.group(1)}")
+        return next((movie for movie in self._movies if any(candidate == movie.title.casefold() or candidate in movie.title.casefold() for candidate in alternatives)), None)
 
     @staticmethod
     def _expand_query(query: str) -> str:
