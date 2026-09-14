@@ -224,5 +224,8 @@ problem_statement/
 # Dataset
 backend/data/
 
+backend/
 
 idea.txt
+
+app/data/
