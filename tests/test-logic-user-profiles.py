@@ -8,9 +8,17 @@ import pytest
 # PATHS
 # ============================================================
 
-PROJECT_ROOT = Path(r"D:\Subject\HOME_TEST\cine-reason-assistant")
+PROJECT_ROOT = Path(
+    r"D:\Subject\HOME_TEST\cine-reason-assistant"
+)
 
-RAW_DIR = PROJECT_ROOT / "app" / "data" / "ml-latest-small-filtered"
+RAW_DIR = (
+    PROJECT_ROOT
+    / "app"
+    / "data"
+    / "ml-latest-small-filtered"
+)
+
 PARQUET_FILE = (
     PROJECT_ROOT
     / "app"
@@ -20,7 +28,7 @@ PARQUET_FILE = (
 )
 
 RATINGS_FILE = RAW_DIR / "ratings.csv"
-MOVIES_FILE = RAW_DIR / "movies.csv"
+MOVIES_FILE = RAW_DIR / "movies_with_plots.csv"
 TAGS_FILE = RAW_DIR / "tags.csv"
 
 
@@ -34,23 +42,45 @@ TOP_N_GENRES = 2
 
 
 # ============================================================
+# EXPECTED SCHEMA
+# ============================================================
+
+EXPECTED_COLUMNS = [
+    "user_id",
+    "high_rated_genres",
+    "high_rated_movies",
+    "user_tags",
+    "low_rated_genres",
+    "unwatched_matching_movie_ids",
+    "top_2_genres",
+]
+
+
+# ============================================================
 # HELPERS
 # ============================================================
 
-def split_genres(genres):
-    """Convert 'Action|Comedy' -> ['Action', 'Comedy']."""
-    if pd.isna(genres):
+def split_genres(value):
+    """Convert 'Action|Comedy|Drama' into a list."""
+
+    if pd.isna(value):
+        return []
+
+    value = str(value).strip()
+
+    if not value:
         return []
 
     return [
         genre.strip()
-        for genre in str(genres).split("|")
+        for genre in value.split("|")
         if genre.strip()
     ]
 
 
 def unique_preserve_order(values):
-    """Remove duplicates while preserving original order."""
+    """Remove duplicates while preserving order."""
+
     seen = set()
     result = []
 
@@ -64,21 +94,43 @@ def unique_preserve_order(values):
 
 def as_list(value):
     """
-    Convert Parquet list/ndarray representation to Python list
+    Convert Parquet list-like values to Python list
     ONLY for comparison.
 
-    This does NOT modify the loaded Parquet DataFrame.
+    The original Parquet DataFrame is NOT modified.
     """
+
     if value is None:
         return []
 
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
+        return value
+
+    if isinstance(value, tuple):
         return list(value)
 
     if hasattr(value, "tolist"):
-        return value.tolist()
+        converted = value.tolist()
+
+        if isinstance(converted, list):
+            return converted
 
     return list(value)
+
+
+def progress(current, total, user_id):
+    """Print validation progress."""
+
+    percent = current / total * 100
+
+    print(
+        f"\r    Checking user "
+        f"{current:>3}/{total:<3} "
+        f"({percent:6.2f}%) "
+        f"| user_id={user_id}",
+        end="",
+        flush=True,
+    )
 
 
 # ============================================================
@@ -87,18 +139,53 @@ def as_list(value):
 
 @pytest.fixture(scope="module")
 def source_data():
-    """Load original CSV files."""
-    ratings = pd.read_csv(RATINGS_FILE)
-    movies = pd.read_csv(MOVIES_FILE)
-    tags = pd.read_csv(TAGS_FILE)
 
-    ratings["userId"] = ratings["userId"].astype(int)
-    ratings["movieId"] = ratings["movieId"].astype(int)
+    ratings = pd.read_csv(
+        RATINGS_FILE
+    )
 
-    movies["movieId"] = movies["movieId"].astype(int)
+    movies = pd.read_csv(
+        MOVIES_FILE
+    )
 
-    tags["userId"] = tags["userId"].astype(int)
-    tags["movieId"] = tags["movieId"].astype(int)
+    tags = pd.read_csv(
+        TAGS_FILE
+    )
+
+    ratings["userId"] = (
+        ratings["userId"]
+        .astype(int)
+    )
+
+    ratings["movieId"] = (
+        ratings["movieId"]
+        .astype(int)
+    )
+
+    ratings["rating"] = (
+        ratings["rating"]
+        .astype(float)
+    )
+
+    movies["movieId"] = (
+        movies["movieId"]
+        .astype(int)
+    )
+
+    movies["genres_list"] = (
+        movies["genres"]
+        .apply(split_genres)
+    )
+
+    tags["userId"] = (
+        tags["userId"]
+        .astype(int)
+    )
+
+    tags["movieId"] = (
+        tags["movieId"]
+        .astype(int)
+    )
 
     return {
         "ratings": ratings,
@@ -109,291 +196,444 @@ def source_data():
 
 @pytest.fixture(scope="module")
 def profiles():
-    """Load the generated Parquet file."""
-    return pd.read_parquet(PARQUET_FILE)
+
+    return pd.read_parquet(
+        PARQUET_FILE,
+        engine="pyarrow",
+    )
 
 
 # ============================================================
-# FILE EXISTENCE
+# FILE VALIDATION
 # ============================================================
 
 def test_source_files_exist():
-    """Verify all source CSV files exist."""
-    assert RATINGS_FILE.exists(), f"Missing: {RATINGS_FILE}"
-    assert MOVIES_FILE.exists(), f"Missing: {MOVIES_FILE}"
-    assert TAGS_FILE.exists(), f"Missing: {TAGS_FILE}"
+
+    assert RATINGS_FILE.exists(), (
+        f"Missing: {RATINGS_FILE}"
+    )
+
+    assert MOVIES_FILE.exists(), (
+        f"Missing: {MOVIES_FILE}"
+    )
+
+    assert TAGS_FILE.exists(), (
+        f"Missing: {TAGS_FILE}"
+    )
 
 
 def test_parquet_file_exists():
-    """Verify generated Parquet file exists."""
-    assert PARQUET_FILE.exists(), f"Missing: {PARQUET_FILE}"
+
+    assert PARQUET_FILE.exists(), (
+        f"Missing: {PARQUET_FILE}"
+    )
+
+
+# ============================================================
+# SCHEMA VALIDATION
+# ============================================================
+
+def test_profile_schema(profiles):
+
+    assert profiles.columns.tolist() == (
+        EXPECTED_COLUMNS
+    )
 
 
 # ============================================================
 # USER COVERAGE
 # ============================================================
 
-def test_all_users_are_transferred(source_data, profiles):
-    """
-    Every user appearing in ratings.csv must appear in
-    user_profiles.parquet.
-    """
-    ratings_users = set(source_data["ratings"]["userId"].unique())
-    profile_users = set(profiles["user_id"].unique())
+def test_all_users_transferred(
+    source_data,
+    profiles,
+):
 
-    assert profile_users == ratings_users
-
-
-# ============================================================
-# RATING COUNT
-# ============================================================
-
-def test_rating_count(source_data, profiles):
-    """
-    Verify rating_count in Parquet equals the number of
-    rating rows for each user in ratings.csv.
-    """
     ratings = source_data["ratings"]
 
-    expected = ratings.groupby("userId").size()
-
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
-
-        expected_count = int(expected.loc[user_id])
-        actual_count = int(row["rating_count"])
-
-        assert actual_count == expected_count, (
-            f"user_id={user_id}: "
-            f"expected rating_count={expected_count}, "
-            f"got {actual_count}"
-        )
-
-
-# ============================================================
-# AVERAGE RATING
-# ============================================================
-
-def test_average_rating(source_data, profiles):
-    """
-    Verify avg_rating in Parquet equals the average rating
-    calculated directly from ratings.csv.
-    """
-    ratings = source_data["ratings"]
-
-    expected = ratings.groupby("userId")["rating"].mean()
-
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
-
-        expected_avg = round(float(expected.loc[user_id]), 3)
-        actual_avg = round(float(row["avg_rating"]), 3)
-
-        assert actual_avg == expected_avg, (
-            f"user_id={user_id}: "
-            f"expected avg_rating={expected_avg}, "
-            f"got {actual_avg}"
-        )
-
-
-# ============================================================
-# WATCHED MOVIE IDS
-# ============================================================
-
-def test_watched_movie_ids(source_data, profiles):
-    """
-    Verify watched_movie_ids comes from movieId values in
-    ratings.csv for the same user.
-    """
-    ratings = source_data["ratings"]
-
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
-
-        source_user = ratings[ratings["userId"] == user_id]
-
-        expected = unique_preserve_order(
-            source_user["movieId"].tolist()
-        )
-
-        actual = as_list(row["watched_movie_ids"])
-
-        assert actual == expected, (
-            f"user_id={user_id}: watched_movie_ids mismatch"
-        )
-
-
-# ============================================================
-# HIGH-RATED MOVIES
-# ============================================================
-
-def test_high_rated_movies(source_data, profiles):
-    """
-    Verify high_rated_movies is correctly generated from
-    ratings >= 4.0 and movies.csv.
-    """
-    ratings = source_data["ratings"]
-    movies = source_data["movies"]
-
-    merged = ratings.merge(
-        movies[["movieId", "title"]],
-        on="movieId",
-        how="left",
+    source_users = set(
+        ratings["userId"].unique()
     )
 
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
+    profile_users = set(
+        profiles["user_id"].unique()
+    )
 
-        user_data = merged[
-            (merged["userId"] == user_id)
-            & (merged["rating"] >= HIGH_RATING_THRESHOLD)
-        ]
+    assert profile_users == source_users
 
-        expected = (
-            user_data
-            .sort_values("rating", ascending=False)
-            ["title"]
-            .drop_duplicates()
-            .tolist()
-        )
-
-        actual = as_list(row["high_rated_movies"])
-
-        assert actual == expected, (
-            f"user_id={user_id}: high_rated_movies mismatch"
-        )
+    assert len(profiles) == len(
+        source_users
+    )
 
 
 # ============================================================
 # HIGH-RATED GENRES
 # ============================================================
 
-def test_high_rated_genres(source_data, profiles):
-    """
-    Verify high_rated_genres is generated from genres of
-    movies rated >= 4.0.
-    """
+def test_high_rated_genres(
+    source_data,
+    profiles,
+):
+
     ratings = source_data["ratings"]
     movies = source_data["movies"]
 
     merged = ratings.merge(
-        movies[["movieId", "genres"]],
+        movies[
+            [
+                "movieId",
+                "genres_list",
+            ]
+        ],
         on="movieId",
         how="left",
+        validate="many_to_one",
     )
 
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
+    total = len(profiles)
+
+    print()
+    print(
+        "\n  HIGH-RATED GENRES"
+    )
+
+    for position, (_, profile) in enumerate(
+        profiles.iterrows(),
+        start=1,
+    ):
+
+        user_id = int(
+            profile["user_id"]
+        )
+
+        progress(
+            position,
+            total,
+            user_id,
+        )
 
         user_data = merged[
-            (merged["userId"] == user_id)
-            & (merged["rating"] >= HIGH_RATING_THRESHOLD)
+            merged["userId"] == user_id
+        ]
+
+        high_rated = user_data[
+            user_data["rating"]
+            >= HIGH_RATING_THRESHOLD
         ]
 
         expected_genres = []
 
-        for genres in user_data["genres"]:
-            expected_genres.extend(split_genres(genres))
+        for genres in (
+            high_rated["genres_list"]
+        ):
+            expected_genres.extend(
+                genres
+            )
 
-        expected = unique_preserve_order(expected_genres)
-
-        actual = as_list(row["high_rated_genres"])
-
-        assert actual == expected, (
-            f"user_id={user_id}: high_rated_genres mismatch"
+        expected = (
+            unique_preserve_order(
+                expected_genres
+            )
         )
 
+        actual = as_list(
+            profile[
+                "high_rated_genres"
+            ]
+        )
+
+        assert actual == expected, (
+            f"\nuser_id={user_id}: "
+            "high_rated_genres mismatch\n"
+            f"Expected: {expected}\n"
+            f"Actual:   {actual}"
+        )
+
+    print()
+
 
 # ============================================================
-# LOW-RATED GENRES
+# HIGH-RATED MOVIES
 # ============================================================
 
-def test_low_rated_genres(source_data, profiles):
-    """
-    Verify low_rated_genres is generated from genres of
-    movies rated <= 3.0.
-    """
+def test_high_rated_movies(
+    source_data,
+    profiles,
+):
+
     ratings = source_data["ratings"]
     movies = source_data["movies"]
 
     merged = ratings.merge(
-        movies[["movieId", "genres"]],
+        movies[
+            [
+                "movieId",
+                "title",
+            ]
+        ],
         on="movieId",
         how="left",
+        validate="many_to_one",
     )
 
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
+    total = len(profiles)
+
+    print()
+    print(
+        "\n  HIGH-RATED MOVIES"
+    )
+
+    for position, (_, profile) in enumerate(
+        profiles.iterrows(),
+        start=1,
+    ):
+
+        user_id = int(
+            profile["user_id"]
+        )
+
+        progress(
+            position,
+            total,
+            user_id,
+        )
 
         user_data = merged[
-            (merged["userId"] == user_id)
-            & (merged["rating"] <= LOW_RATING_THRESHOLD)
+            merged["userId"] == user_id
         ]
 
-        expected_genres = []
+        high_rated = user_data[
+            user_data["rating"]
+            >= HIGH_RATING_THRESHOLD
+        ]
 
-        for genres in user_data["genres"]:
-            expected_genres.extend(split_genres(genres))
+        expected = (
+            high_rated
+            .sort_values(
+                "rating",
+                ascending=False,
+            )
+            ["title"]
+            .dropna()
+            .drop_duplicates()
+            .tolist()
+        )
 
-        expected = unique_preserve_order(expected_genres)
-
-        actual = as_list(row["low_rated_genres"])
+        actual = as_list(
+            profile[
+                "high_rated_movies"
+            ]
+        )
 
         assert actual == expected, (
-            f"user_id={user_id}: low_rated_genres mismatch"
+            f"\nuser_id={user_id}: "
+            "high_rated_movies mismatch\n"
+            f"Expected: {expected[:10]}\n"
+            f"Actual:   {actual[:10]}"
         )
+
+    print()
 
 
 # ============================================================
 # USER TAGS
 # ============================================================
 
-def test_user_tags(source_data, profiles):
-    """
-    Verify user_tags in Parquet matches tags.csv for each user.
-    """
+def test_user_tags(
+    source_data,
+    profiles,
+):
+
     tags = source_data["tags"]
 
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
+    total = len(profiles)
 
-        user_tags = tags[
+    print()
+    print(
+        "\n  USER TAGS"
+    )
+
+    for position, (_, profile) in enumerate(
+        profiles.iterrows(),
+        start=1,
+    ):
+
+        user_id = int(
+            profile["user_id"]
+        )
+
+        progress(
+            position,
+            total,
+            user_id,
+        )
+
+        source_tags = tags[
             tags["userId"] == user_id
-        ]["tag"].tolist()
+        ]["tag"]
 
-        expected = unique_preserve_order(user_tags)
+        source_tags = (
+            source_tags
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
 
-        actual = as_list(row["user_tags"])
+        source_tags = source_tags[
+            source_tags != ""
+        ]
+
+        expected = (
+            unique_preserve_order(
+                source_tags.tolist()
+            )
+        )
+
+        actual = as_list(
+            profile["user_tags"]
+        )
 
         assert actual == expected, (
-            f"user_id={user_id}: user_tags mismatch"
+            f"\nuser_id={user_id}: "
+            "user_tags mismatch\n"
+            f"Expected: {expected}\n"
+            f"Actual:   {actual}"
         )
+
+    print()
+
+
+# ============================================================
+# LOW-RATED GENRES
+# ============================================================
+
+def test_low_rated_genres(
+    source_data,
+    profiles,
+):
+
+    ratings = source_data["ratings"]
+    movies = source_data["movies"]
+
+    merged = ratings.merge(
+        movies[
+            [
+                "movieId",
+                "genres_list",
+            ]
+        ],
+        on="movieId",
+        how="left",
+        validate="many_to_one",
+    )
+
+    total = len(profiles)
+
+    print()
+    print(
+        "\n  LOW-RATED GENRES"
+    )
+
+    for position, (_, profile) in enumerate(
+        profiles.iterrows(),
+        start=1,
+    ):
+
+        user_id = int(
+            profile["user_id"]
+        )
+
+        progress(
+            position,
+            total,
+            user_id,
+        )
+
+        user_data = merged[
+            merged["userId"] == user_id
+        ]
+
+        low_rated = user_data[
+            user_data["rating"]
+            <= LOW_RATING_THRESHOLD
+        ]
+
+        expected_genres = []
+
+        for genres in (
+            low_rated["genres_list"]
+        ):
+            expected_genres.extend(
+                genres
+            )
+
+        expected = (
+            unique_preserve_order(
+                expected_genres
+            )
+        )
+
+        actual = as_list(
+            profile[
+                "low_rated_genres"
+            ]
+        )
+
+        assert actual == expected, (
+            f"\nuser_id={user_id}: "
+            "low_rated_genres mismatch\n"
+            f"Expected: {expected}\n"
+            f"Actual:   {actual}"
+        )
+
+    print()
 
 
 # ============================================================
 # TOP 2 GENRES
 # ============================================================
 
-def test_top_2_genres(source_data, profiles):
-    """
-    Verify top_2_genres is calculated from genre frequency
-    in the user's watched movies.
+def test_top_2_genres(
+    source_data,
+    profiles,
+):
 
-    Ranking:
-        1. Highest watch count
-        2. Alphabetical order for ties
-    """
     ratings = source_data["ratings"]
     movies = source_data["movies"]
 
     merged = ratings.merge(
-        movies[["movieId", "genres"]],
+        movies[
+            [
+                "movieId",
+                "genres_list",
+            ]
+        ],
         on="movieId",
         how="left",
+        validate="many_to_one",
     )
 
-    for _, row in profiles.iterrows():
-        user_id = row["user_id"]
+    total = len(profiles)
+
+    print()
+    print(
+        "\n  TOP 2 GENRES"
+    )
+
+    for position, (_, profile) in enumerate(
+        profiles.iterrows(),
+        start=1,
+    ):
+
+        user_id = int(
+            profile["user_id"]
+        )
+
+        progress(
+            position,
+            total,
+            user_id,
+        )
 
         user_data = merged[
             merged["userId"] == user_id
@@ -401,91 +641,343 @@ def test_top_2_genres(source_data, profiles):
 
         genre_counts = {}
 
-        for genres in user_data["genres"]:
-            for genre in split_genres(genres):
-                genre_counts[genre] = genre_counts.get(genre, 0) + 1
+        for genres in (
+            user_data["genres_list"]
+        ):
+
+            for genre in genres:
+
+                genre_counts[genre] = (
+                    genre_counts.get(
+                        genre,
+                        0,
+                    )
+                    + 1
+                )
 
         expected = [
             genre
             for genre, _ in sorted(
                 genre_counts.items(),
-                key=lambda x: (-x[1], x[0])
+                key=lambda item: (
+                    -item[1],
+                    item[0],
+                ),
             )[:TOP_N_GENRES]
         ]
 
-        actual = as_list(row["top_2_genres"])
-
-        assert actual == expected, (
-            f"user_id={user_id}: "
-            f"expected top_2_genres={expected}, "
-            f"got {actual}"
+        actual = as_list(
+            profile[
+                "top_2_genres"
+            ]
         )
 
+        assert actual == expected, (
+            f"\nuser_id={user_id}: "
+            "top_2_genres mismatch\n"
+            f"Expected: {expected}\n"
+            f"Actual:   {actual}"
+        )
+
+    print()
+
 
 # ============================================================
-# COMPLETE PROFILE VALIDATION
+# UNWATCHED MATCHING MOVIES
 # ============================================================
 
-def test_profile_values_not_null(source_data, profiles):
-    """
-    Verify important scalar values are not missing after
-    CSV -> transformation -> Parquet.
-    """
-    required_columns = [
+def test_unwatched_matching_movie_ids(
+    source_data,
+    profiles,
+):
+
+    ratings = source_data["ratings"]
+    movies = source_data["movies"]
+
+    total = len(profiles)
+
+    print()
+    print(
+        "\n  UNWATCHED MATCHING MOVIES"
+    )
+
+    for position, (_, profile) in enumerate(
+        profiles.iterrows(),
+        start=1,
+    ):
+
+        user_id = int(
+            profile["user_id"]
+        )
+
+        progress(
+            position,
+            total,
+            user_id,
+        )
+
+        # ----------------------------------------------------
+        # Movies watched by this user
+        # ----------------------------------------------------
+
+        watched_ids = set(
+            ratings.loc[
+                ratings["userId"] == user_id,
+                "movieId",
+            ]
+            .astype(int)
+            .tolist()
+        )
+
+        # ----------------------------------------------------
+        # High-rated genres
+        # ----------------------------------------------------
+
+        high_rated_genres = set(
+            as_list(
+                profile[
+                    "high_rated_genres"
+                ]
+            )
+        )
+
+        # ----------------------------------------------------
+        # Find unwatched movies
+        # with matching genres
+        # ----------------------------------------------------
+
+        expected = []
+
+        if high_rated_genres:
+
+            unwatched_movies = movies[
+                ~movies["movieId"].isin(
+                    watched_ids
+                )
+            ]
+
+            for _, movie in (
+                unwatched_movies.iterrows()
+            ):
+
+                movie_genres = set(
+                    movie["genres_list"]
+                )
+
+                if (
+                    movie_genres
+                    & high_rated_genres
+                ):
+                    expected.append(
+                        int(movie["movieId"])
+                    )
+
+        expected = (
+            unique_preserve_order(
+                expected
+            )
+        )
+
+        actual = as_list(
+            profile[
+                "unwatched_matching_movie_ids"
+            ]
+        )
+
+        assert actual == expected, (
+            f"\nuser_id={user_id}: "
+            "unwatched_matching_movie_ids "
+            "mismatch\n"
+            f"Expected count: {len(expected)}\n"
+            f"Actual count:   {len(actual)}\n"
+            f"Expected first: {expected[:20]}\n"
+            f"Actual first:   {actual[:20]}"
+        )
+
+        # ----------------------------------------------------
+        # Additional logical checks
+        # ----------------------------------------------------
+
+        assert not (
+            set(actual)
+            & watched_ids
+        ), (
+            f"\nuser_id={user_id}: "
+            "unwatched list contains "
+            "a movie already watched"
+        )
+
+    print()
+
+
+# ============================================================
+# PROFILE LOGICAL CONSISTENCY
+# ============================================================
+
+def test_profile_consistency(
+    profiles,
+):
+
+    total = len(profiles)
+
+    print()
+    print(
+        "\n  PROFILE CONSISTENCY"
+    )
+
+    for position, (_, profile) in enumerate(
+        profiles.iterrows(),
+        start=1,
+    ):
+
+        user_id = int(
+            profile["user_id"]
+        )
+
+        progress(
+            position,
+            total,
+            user_id,
+        )
+
+        high_genres = set(
+            as_list(
+                profile[
+                    "high_rated_genres"
+                ]
+            )
+        )
+
+        top_genres = as_list(
+            profile[
+                "top_2_genres"
+            ]
+        )
+
+        matching_movies = as_list(
+            profile[
+                "unwatched_matching_movie_ids"
+            ]
+        )
+
+        # Top genres must be <= 2
+        assert len(top_genres) <= 2
+
+        # Top genres must be unique
+        assert len(top_genres) == len(
+            set(top_genres)
+        )
+
+        # Matching movie IDs must be unique
+        assert len(matching_movies) == len(
+            set(matching_movies)
+        )
+
+        # Every matching movie must be
+        # related to a high-rated genre.
+        #
+        # This is already tested against
+        # the source data above.
+
+        if matching_movies:
+            assert high_genres
+
+    print()
+
+
+# ============================================================
+# NO MISSING CORE VALUES
+# ============================================================
+
+def test_no_missing_core_values(
+    profiles,
+):
+
+    core_columns = [
         "user_id",
-        "rating_count",
-        "avg_rating",
+        "high_rated_genres",
+        "high_rated_movies",
+        "user_tags",
+        "low_rated_genres",
+        "unwatched_matching_movie_ids",
+        "top_2_genres",
     ]
 
-    assert not profiles[required_columns].isnull().any().any()
-
-
-def test_profile_count_matches_source(source_data, profiles):
-    """
-    Number of profiles must equal number of unique users
-    in ratings.csv.
-    """
-    expected_users = source_data["ratings"]["userId"].nunique()
-    actual_users = profiles["user_id"].nunique()
-
-    assert actual_users == expected_users
+    assert not (
+        profiles[
+            core_columns
+        ]
+        .isnull()
+        .any()
+        .any()
+    )
 
 
 # ============================================================
 # FINAL SUMMARY
 # ============================================================
 
-def test_print_transfer_summary(source_data, profiles):
-    """Print a short CSV -> Parquet validation summary."""
+def test_transfer_summary(
+    source_data,
+    profiles,
+):
+
     ratings = source_data["ratings"]
     movies = source_data["movies"]
     tags = source_data["tags"]
 
-    print("\n" + "=" * 70)
-    print("CSV -> USER PROFILES PARQUET VALIDATION")
+    print()
+    print()
+    print("=" * 70)
+    print(
+        "CSV -> USER PROFILE PARQUET"
+    )
+    print(
+        "DATA TRANSFER VALIDATION"
+    )
     print("=" * 70)
 
-    print(f"Source ratings : {len(ratings):,}")
-    print(f"Source movies  : {len(movies):,}")
-    print(f"Source tags    : {len(tags):,}")
-    print(f"Source users   : {ratings['userId'].nunique():,}")
+    print()
+    print("SOURCE DATA")
+    print(
+        f"  ratings.csv           : "
+        f"{len(ratings):,}"
+    )
+    print(
+        f"  movies_with_plots.csv : "
+        f"{len(movies):,}"
+    )
+    print(
+        f"  tags.csv              : "
+        f"{len(tags):,}"
+    )
+    print(
+        f"  unique users          : "
+        f"{ratings['userId'].nunique():,}"
+    )
 
-    print("-" * 70)
+    print()
+    print("GENERATED PARQUET")
+    print(
+        f"  users                 : "
+        f"{len(profiles):,}"
+    )
+    print(
+        f"  columns               : "
+        f"{len(profiles.columns)}"
+    )
 
-    print(f"Parquet users  : {len(profiles):,}")
-    print(f"Parquet columns: {len(profiles.columns):,}")
+    print()
+    print("FINAL SCHEMA")
 
-    print("-" * 70)
+    for column in profiles.columns:
+        print(
+            f"  - {column}"
+        )
 
-    print("Validation:")
-    print("  User coverage       : PASSED")
-    print("  Rating count        : PASSED")
-    print("  Average rating      : PASSED")
-    print("  Watched movies      : PASSED")
-    print("  High-rated movies   : PASSED")
-    print("  High-rated genres   : PASSED")
-    print("  Low-rated genres    : PASSED")
-    print("  User tags           : PASSED")
-    print("  Top 2 genres        : PASSED")
-
+    print()
+    print("=" * 70)
+    print(
+        "CSV -> PARQUET VALIDATION: PASSED"
+    )
     print("=" * 70)
