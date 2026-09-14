@@ -31,7 +31,7 @@ OTHER
   specialized categories above.
 
 Important:
-- Use the user summary as context when deciding whether the query
+- Use the user profile when deciding whether the query
   requires personal information.
 - Do not answer the user's question.
 - Do not recommend movies.
@@ -43,6 +43,6 @@ User ID:
 User question:
 {query}
 
-Current user summary:
+Current user profile:
 {user_summary}
 """

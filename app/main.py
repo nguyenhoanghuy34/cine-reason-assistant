@@ -1,141 +1,103 @@
 from app.agent.graph import agent
 
-from app.agent.tools.user_summary import (
-    create_user_summary,
-    delete_user_summary,
-)
-
 from app.data_extract.create_user_temp import (
     create_user_temp,
     delete_user_temp,
 )
 
 
-def run_query(
-    query: str,
-    user_id: int,
-) -> None:
+def run_chat(user_id: int) -> None:
 
     temp_created = False
-    summary_created = False
 
     try:
-        # ---------------------------------------------------------
-        # STEP 1: Create temporary user profile
-        # ---------------------------------------------------------
+        # ==========================================================
+        # 1. CREATE TEMP USER PROFILE
+        # ==========================================================
 
         temp_path = create_user_temp(user_id)
         temp_created = True
 
         print("=" * 70)
-        print("TEMP USER DATA")
+        print("USER PROFILE")
         print("=" * 70)
 
         print(f"User ID : {user_id}")
-        print(f"File    : {temp_path}")
+        print(f"Profile : {temp_path}")
 
         print("=" * 70)
 
-        # ---------------------------------------------------------
-        # STEP 2: Summarize user with Gemini
-        # ---------------------------------------------------------
+        # ==========================================================
+        # 2. START CHAT
+        # ==========================================================
 
         print()
         print("=" * 70)
-        print("CREATING USER SUMMARY")
+        print("CHAT STARTED")
         print("=" * 70)
 
-        summary_path = create_user_summary(user_id)
-        summary_created = True
-
-        print()
-        print(f"Summary : {summary_path}")
-
-        print("-" * 70)
-
-        summary = summary_path.read_text(
-            encoding="utf-8"
-        )
-
-        print(summary)
-
+        print(f"User ID: {user_id}")
+        print("Ask anything about movies.")
+        print("Press Ctrl+C to exit.")
         print("=" * 70)
 
-        # ---------------------------------------------------------
-        # STEP 3: Ask user question
-        # ---------------------------------------------------------
+        while True:
 
-        query = input(
-            "Enter your question: "
-        ).strip()
+            print()
 
-        if not query:
-            print("Question cannot be empty.")
-            return
+            query = input(
+                "You: "
+            ).strip()
 
-        print()
+            if not query:
+                continue
 
-        # ---------------------------------------------------------
-        # STEP 4: Run agent
-        # ---------------------------------------------------------
+            # ------------------------------------------------------
+            # Send user question to agent
+            # ------------------------------------------------------
 
-        result = agent.invoke(
-            {
-                "user_id": user_id,
-                "query": query,
-            }
-        )
-
-        # ---------------------------------------------------------
-        # STEP 5: Print result
-        # ---------------------------------------------------------
-
-        print("=" * 70)
-        print("AGENT RESULT")
-        print("=" * 70)
-
-        print(f"USER ID : {user_id}")
-        print(f"QUERY   : {query}")
-        print(f"INTENT  : {result.get('intent')}")
-        print(f"REASON  : {result.get('intent_reason')}")
-
-        print("-" * 70)
-
-        print(
-            result.get(
-                "response",
-                "No response.",
+            result = agent.invoke(
+                {
+                    "user_id": user_id,
+                    "query": query,
+                }
             )
-        )
 
-        print("=" * 70)
+            # ------------------------------------------------------
+            # Show answer
+            # ------------------------------------------------------
+
+            print()
+            print("Assistant:")
+            print("-" * 70)
+
+            print(
+                result.get(
+                    "response",
+                    "No response.",
+                )
+            )
+
+            print("-" * 70)
 
     finally:
 
-        # ---------------------------------------------------------
-        # STEP 6: Cleanup only when files were actually created
-        # ---------------------------------------------------------
-
-        if summary_created:
-            delete_user_summary(user_id)
+        # ==========================================================
+        # 3. DELETE TEMP USER PROFILE
+        # ==========================================================
 
         if temp_created:
             delete_user_temp(user_id)
 
         print()
         print("=" * 70)
-        print("TEMP DATA CLEANUP")
+        print("CHAT ENDED")
         print("=" * 70)
 
-        if summary_created:
-            print("Summary TXT : DELETED")
-        else:
-            print("Summary TXT : NOT CREATED")
-
         if temp_created:
-            print("Profile     : DELETED")
+            print("Profile : DELETED")
         else:
-            print("Profile     : NOT CREATED")
+            print("Profile : NOT CREATED")
 
         print("=" * 70)
 
@@ -146,23 +108,46 @@ if __name__ == "__main__":
     print("CINE REASON ASSISTANT")
     print("=" * 70)
 
+    # ==============================================================
+    # GET USER ID
+    # ==============================================================
+
     while True:
 
         try:
+
             user_id = int(
-                input("Enter User ID: ")
+                input(
+                    "Enter User ID: "
+                ).strip()
             )
 
             break
 
         except ValueError:
+
             print(
                 "User ID must be an integer."
             )
 
     print()
 
-    run_query(
-        query="",
-        user_id=user_id,
-    )
+    try:
+
+        run_chat(user_id)
+
+    except KeyboardInterrupt:
+
+        print()
+        print("Exiting...")
+
+    except Exception as exc:
+
+        print()
+        print("=" * 70)
+        print("ERROR")
+        print("=" * 70)
+
+        print(exc)
+
+        print("=" * 70)
