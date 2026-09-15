@@ -6,9 +6,7 @@
 [![Groq](https://img.shields.io/badge/Groq-LLM%20Inference-F55036)](https://console.groq.com/)
 [![Evaluation](https://img.shields.io/badge/Evaluation-43%2F43%20Passed-2E7D32)](#evaluation)
 
-An evidence-grounded movie discovery assistant built on a filtered MovieLens dataset. The assistant uses deterministic dataset tools for ratings, genres, plots, title resolution, content similarity, similar-user reasoning, and recommendation evidence. The LLM synthesizes retrieved evidence into a concise answer; it is not treated as the source of truth.
-
-![Functional evaluation](images/A.png)
+An evidence-grounded movie discovery assistant built on a filtered MovieLens dataset. The assistant retrieves factual evidence from local data first, then uses an LLM to synthesize that evidence into concise answers. Ratings, similarities, title matches, and recommendation evidence are computed by deterministic Python tools, not invented by the model.
 
 ## Table of Contents
 
@@ -25,46 +23,44 @@ An evidence-grounded movie discovery assistant built on a filtered MovieLens dat
 
 ## Features
 
-- Personalized recommendations from rating history and genre preference.
-- Movie title resolution for exact titles, aliases, typos, MovieLens title-order variants, and unknown titles.
-- TF-IDF content retrieval over titles, genres, and plot summaries.
+- Personalized answers from user rating history, genre preferences, and watched-movie filtering.
+- Movie title resolution for exact names, aliases, typos, MovieLens title-order variants, and unknown titles.
+- TF-IDF content retrieval over movie titles, genres, and plot summaries.
 - Similar-user reasoning with precomputed user similarity and rating aggregation.
-- Multi-turn memory with LangGraph checkpointing.
-- Grounded answers with explicit evidence instead of unsupported LLM claims.
-- Offline evaluation for functional checks, grounding checks, edge cases, and recommendation-quality diagnostics.
-
-![Title resolution](images/B.png)
+- Multi-turn memory through LangGraph checkpointing.
+- Evidence-first response generation with no-fabrication constraints.
+- Offline evaluation covering functional behavior, grounding, similar-user logic, multi-signal reasoning, edge cases, and ranking diagnostics.
 
 ## Project Structure
 
 ```text
 cine-reason-assistant/
-├── app/
-│   ├── main.py                         # CLI entry point
-│   ├── config.py                       # Loads .env and GROQ_API_KEY
-│   ├── agent/
-│   │   ├── graph.py                    # LangGraph workflow and memory
-│   │   ├── router/                     # Intent classification
-│   │   ├── nodes/                      # General, personal, and related-user nodes
-│   │   ├── llm/                        # Groq LLM client and prompts
-│   │   └── tools/                      # Dataset evidence tools
-│   └── data/
-│       ├── ml-latest-small-filtered/   # Filtered MovieLens CSV files
-│       └── clean-data/                 # Precomputed profiles and similar users
-├── scripts/
-│   ├── trustedai_evaluation_suite.py   # Main offline evaluation suite
-│   ├── evaluate_evidence_quality.py    # Quantitative evidence checks
-│   └── verify_dataset.py               # Dataset verification helper
-├── tests/                              # Pytest tests
-├── images/                             # Report screenshots and figures
-├── Reports/REPORT.md                   # Additional report notes
-├── requirements.txt
-└── README.md
+|-- app/
+|   |-- main.py                         # CLI entry point
+|   |-- config.py                       # Loads .env and GROQ_API_KEY
+|   |-- agent/
+|   |   |-- graph.py                    # LangGraph workflow and memory
+|   |   |-- router/                     # Intent classification
+|   |   |-- nodes/                      # General, personal, and related-user nodes
+|   |   |-- llm/                        # Groq LLM client and prompts
+|   |   `-- tools/                      # Dataset evidence tools
+|   `-- data/
+|       |-- ml-latest-small-filtered/   # Filtered MovieLens CSV files
+|       `-- clean-data/                 # Precomputed profiles and similar users
+|-- scripts/
+|   |-- trustedai_evaluation_suite.py   # Main offline evaluation suite
+|   |-- evaluate_evidence_quality.py    # Quantitative evidence checks
+|   `-- verify_dataset.py               # Dataset verification helper
+|-- tests/                              # Pytest tests
+|-- images/                             # Evaluation screenshots and examples
+|-- Reports/REPORT.md                   # Additional report notes
+|-- requirements.txt
+`-- README.md
 ```
 
 ## Dataset
 
-The project expects the dataset to be available locally under:
+The project expects the dataset under:
 
 ```text
 app/data/ml-latest-small-filtered/
@@ -83,7 +79,7 @@ Precomputed files:
 - `app/data/clean-data/user_profiles.parquet`
 - `app/data/clean-data/user_similarity.parquet`
 
-The core join keys are `movieId` for movie data and `userId` for user data.
+The main join keys are `movieId` for movie data and `userId` for user data.
 
 ## Installation
 
@@ -147,7 +143,7 @@ Example `.env`:
 GROQ_API_KEY=your_groq_api_key_here
 ```
 
-The key is loaded in `app/config.py`. If it is missing, the app will stop with:
+The key is loaded in `app/config.py`. If it is missing, the app stops with:
 
 ```text
 GROQ_API_KEY not found in .env
@@ -164,7 +160,7 @@ python -m app.main
 You will be asked for:
 
 - `User ID`: a MovieLens user ID, for example `1`, `15`, or `30`.
-- `Session name`: press Enter for `default`, or reuse a previous name to continue memory.
+- `Session name`: press Enter for `default`, or reuse a previous session name to continue memory.
 
 Example questions:
 
@@ -183,7 +179,7 @@ Exit the chat with:
 /exit
 ```
 
-![Personal rating history](images/Personal_rating.png)
+![Personal rating history example](images/Personal_rating.png)
 
 ## Run Tests
 
@@ -193,7 +189,7 @@ Run the pytest suite:
 pytest
 ```
 
-Run specific test files:
+Run selected test files:
 
 ```powershell
 pytest tests\test_agent_memory.py
@@ -208,9 +204,9 @@ Run the main TrustedAI offline evaluation suite:
 python scripts\trustedai_evaluation_suite.py
 ```
 
-This suite does not call the LLM. It checks deterministic evidence retrieval and recommendation behavior directly against local dataset files.
+This suite does not call the LLM. It checks deterministic evidence retrieval and recommendation behavior directly against the local dataset.
 
-Expected summary:
+Expected evidence/functional summary:
 
 ```text
 A. Functional tests: Passed 10/10
@@ -222,22 +218,62 @@ F. Failure / edge-case tests: Passed 9/9
 Overall evidence/functional checks: Passed 43/43
 ```
 
-![Grounding evaluation](images/C.png)
-![Similar-user evaluation](images/D.png)
+### Evaluation Output Screenshots
 
-### What the Evaluation Functions Check
+The images below correspond to the printed groups from `scripts/trustedai_evaluation_suite.py`.
 
-- `evaluate_functional()`: rating history, genre preferences, personalized recommendations, user-specific outputs, and sparse-user handling.
-- `evaluate_content_search()`: theme search, time-travel search, cross-genre theme matches, plot comparison, and seed-title similarity.
-- `evaluate_title_resolution()`: exact titles, MovieLens title-order variants, typos, aliases, near-duplicate titles, genre lookup, plot lookup, and unknown movies.
-- `evaluate_blind_spots_and_grounding()`: genre blind spots, high-rated versus frequently watched genres, required evidence keys, and no-fabrication answer constraints.
-- `evaluate_similar_users()`: similar-user IDs, similar-user ratings for target movies, average rating, rating count, consensus recommendations, and insufficient evidence.
-- `evaluate_multi_signal_and_memory()`: previous recommendation explanation, combined user-history and similar-user evidence, genre constraints, positive seed movies, and multi-turn constraints.
-- `evaluate_edge_cases()`: invalid user IDs, missing movies, low-confidence fuzzy matches, watched-movie exclusion, sparse history, missing tags, ambiguous titles, and contradictory constraints.
-- `evaluate_offline_metrics()`: a separate ranking diagnostic that hides recent positive ratings and checks whether recommendations recover them.
+#### A. Functional tests
 
-![Multi-signal evaluation](images/E.png)
-![Failure cases](images/F.png)
+Checks user rating history, genre preference, personalized recommendations, user-specific outputs, sparse-user behavior, and content/theme search.
+
+![A. Functional tests](images/A.png)
+
+#### B. Title-resolution tests
+
+Checks exact titles, MovieLens title-order variants, typo/fuzzy matching, aliases, similar titles such as `Alien` and `Aliens`, plot lookup, genre lookup, and unknown movies.
+
+![B. Title-resolution tests](images/B.png)
+
+#### C. Evidence/grounding tests
+
+Checks blind spots, rarely watched genres, high-rated versus frequently watched genre evidence, required evidence keys, title precision/recall, and answer-to-evidence consistency.
+
+![C. Evidence/grounding tests](images/C.png)
+
+#### D. Similar-user reasoning tests
+
+Checks similar-user opinions about target movies, rating counts, average ratings, consensus recommendation evidence, and insufficient-evidence behavior.
+
+![D. Similar-user reasoning tests](images/D.png)
+
+#### E. Multi-turn and multi-signal tests
+
+Checks previous recommendation explanation, user-history plus similar-user evidence, outside-top-genre recommendation, rare-genre discovery, constraint preservation, and positive seed handling.
+
+![E. Multi-turn and multi-signal tests](images/E.png)
+
+#### F. Failure / edge-case tests
+
+Checks invalid user IDs, absent movies, low-confidence fuzzy titles, watched-candidate exclusion, sparse history, few-rating uncertainty, missing tags, ambiguous title matches, and contradictory constraints.
+
+![F. Failure / edge-case tests](images/F.png)
+
+#### G. Offline recommendation-quality metrics
+
+Shows the separate hold-out ranking diagnostic. This section is used to discuss ranking-quality limitations separately from the `43/43` evidence/functional checks.
+
+![G. Offline recommendation-quality metrics](images/G.png)
+
+### What Each Evaluation Function Checks
+
+- `evaluate_functional()`: retrieves top-rated movies for the current user, derives genre preferences, generates unwatched recommendations, checks personalization across users, and handles sparse profiles.
+- `evaluate_content_search()`: finds movies from theme queries, compares movie plots, and retrieves movies similar to a seed title.
+- `evaluate_title_resolution()`: resolves exact, canonical, alias, fuzzy, and unknown titles before plot or genre lookup.
+- `evaluate_blind_spots_and_grounding()`: verifies genre exposure evidence, high-rated versus watched counts, required evidence keys, and no-fabrication prompt constraints.
+- `evaluate_similar_users()`: retrieves similar users, gathers their ratings for target movies, computes count and average rating, and avoids invented consensus.
+- `evaluate_multi_signal_and_memory()`: combines previous recommendations, user history, similar users, content similarity, rare genres, and explicit constraints across turns.
+- `evaluate_edge_cases()`: checks controlled behavior for invalid IDs, absent data, ambiguous titles, sparse evidence, missing tags, and contradictory filters.
+- `evaluate_offline_metrics()`: runs a separate recommendation-ranking diagnostic using held-out positive ratings.
 
 ## Example Workflows
 
@@ -256,8 +292,6 @@ For questions such as "What do similar users think about Pulp Fiction?", the sys
 ### Grounded Failure Handling
 
 If a movie is missing from the dataset or a title match is low-confidence, the assistant should not fabricate plot, genre, or rating evidence. It returns a conservative answer based on available data.
-
-![Offline metric diagnostic](images/G.png)
 
 ## Troubleshooting
 
