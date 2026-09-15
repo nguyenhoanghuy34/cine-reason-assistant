@@ -4,10 +4,6 @@ import pandas as pd
 import pytest
 
 
-# ============================================================
-# PATHS
-# ============================================================
-
 PROJECT_ROOT = Path(
     r"D:\Subject\HOME_TEST\cine-reason-assistant"
 )
@@ -28,27 +24,10 @@ CLEAN_DIR = (
 
 RATINGS_PATH = SOURCE_DIR / "ratings.csv"
 MOVIES_PATH = SOURCE_DIR / "movies_with_plots.csv"
-
-PARQUET_PATH = (
-    CLEAN_DIR / "user_similarity.parquet"
-)
-
-
-# ============================================================
-# EXPECTED SCHEMA
-# ============================================================
-
-EXPECTED_COLUMNS = [
-    "user_id",
-    "related_user_ids",
-]
+PARQUET_PATH = CLEAN_DIR / "user_similarity.parquet"
 
 HIGH_RATING_THRESHOLD = 4.0
 
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 def split_genres(genres):
     if pd.isna(genres):
@@ -81,13 +60,8 @@ def progress(current, total, user_id):
         print()
 
 
-# ============================================================
-# FIXTURES
-# ============================================================
-
 @pytest.fixture(scope="module")
 def source_data():
-
     ratings = pd.read_csv(RATINGS_PATH)
     movies = pd.read_csv(MOVIES_PATH)
 
@@ -96,9 +70,8 @@ def source_data():
     ratings["rating"] = ratings["rating"].astype(float)
 
     movies["movieId"] = movies["movieId"].astype(int)
-
-    movies["genres_list"] = (
-        movies["genres"].apply(split_genres)
+    movies["genres_list"] = movies["genres"].apply(
+        split_genres
     )
 
     return ratings, movies
@@ -106,15 +79,11 @@ def source_data():
 
 @pytest.fixture(scope="module")
 def similarity():
-
-    df = pd.read_parquet(PARQUET_PATH)
-
-    return df
+    return pd.read_parquet(PARQUET_PATH)
 
 
 @pytest.fixture(scope="module")
-def expected_user_genres(source_data):
-
+def user_rating_stats(source_data):
     ratings, movies = source_data
 
     high_rated = ratings[
@@ -122,38 +91,87 @@ def expected_user_genres(source_data):
     ].copy()
 
     high_rated = high_rated.merge(
-        movies[
-            [
-                "movieId",
-                "genres_list",
-            ]
-        ],
+        movies[["movieId", "genres_list"]],
         on="movieId",
         how="inner",
         validate="many_to_one",
     )
 
-    user_genres = {}
+    stats = {}
 
-    for row in high_rated.itertuples(index=False):
+    for user_id in ratings["userId"].unique():
+        user_id = int(user_id)
 
-        user_id = int(row.userId)
+        user_ratings = high_rated[
+            high_rated["userId"] == user_id
+        ]
 
-        if user_id not in user_genres:
-            user_genres[user_id] = set()
+        genre_stats = {}
 
-        for genre in row.genres_list:
-            user_genres[user_id].add(genre)
+        for row in user_ratings.itertuples(
+            index=False
+        ):
+            rating = float(row.rating)
 
-    return user_genres
+            for genre in row.genres_list:
+                if genre not in genre_stats:
+                    genre_stats[genre] = {
+                        "five_star": 0,
+                        "four_star": 0,
+                    }
+
+                if rating == 5.0:
+                    genre_stats[genre]["five_star"] += 1
+
+                elif rating == 4.0:
+                    genre_stats[genre]["four_star"] += 1
+
+        stats[user_id] = genre_stats
+
+    return stats
 
 
-# ============================================================
-# TEST 1
-# ============================================================
+def calculate_common_score(
+    user_id,
+    related_user_id,
+    user_rating_stats,
+):
+    current_stats = user_rating_stats.get(
+        user_id,
+        {},
+    )
+
+    related_stats = user_rating_stats.get(
+        related_user_id,
+        {},
+    )
+
+    shared_genres = (
+        set(current_stats.keys())
+        & set(related_stats.keys())
+    )
+
+    shared_five_star = 0
+    shared_four_star = 0
+
+    for genre in shared_genres:
+        shared_five_star += min(
+            current_stats[genre]["five_star"],
+            related_stats[genre]["five_star"],
+        )
+
+        shared_four_star += min(
+            current_stats[genre]["four_star"],
+            related_stats[genre]["four_star"],
+        )
+
+    return (
+        shared_five_star,
+        shared_four_star,
+    )
+
 
 def test_source_files_exist():
-
     print("\n\nSOURCE FILES")
 
     assert RATINGS_PATH.exists(), (
@@ -168,51 +186,33 @@ def test_source_files_exist():
     print("  movies_with_plots.csv    : OK")
 
 
-# ============================================================
-# TEST 2
-# ============================================================
-
 def test_parquet_exists():
-
     print("\nPARQUET")
 
     assert PARQUET_PATH.exists(), (
         f"Missing:\n{PARQUET_PATH}"
     )
 
-    print(
-        f"  user_similarity.parquet : OK"
-    )
+    print("  user_similarity.parquet  : OK")
 
-
-# ============================================================
-# TEST 3
-# ============================================================
 
 def test_schema(similarity):
-
     print("\nSCHEMA")
 
-    assert similarity.columns.tolist() == EXPECTED_COLUMNS
+    assert similarity.columns.tolist() == [
+        "user_id",
+        "related_user_ids",
+    ]
 
     print("  Columns                  : OK")
-    print(
-        f"  - user_id"
-    )
-    print(
-        f"  - related_user_ids"
-    )
 
-
-# ============================================================
-# TEST 4
-# ============================================================
 
 def test_one_row_per_user(similarity):
-
     print("\nUSER UNIQUENESS")
 
-    assert not similarity["user_id"].duplicated().any()
+    assert not similarity[
+        "user_id"
+    ].duplicated().any()
 
     print(
         f"  Unique users             : "
@@ -222,25 +222,37 @@ def test_one_row_per_user(similarity):
     print("  One row per user         : OK")
 
 
-# ============================================================
-# TEST 5
-# ============================================================
-
 def test_all_users_transferred(
     source_data,
     similarity,
 ):
-
     print("\nUSER TRANSFER")
 
     ratings, _ = source_data
 
     source_users = set(
-        ratings["userId"].unique()
+        ratings["userId"]
+        .astype(int)
+        .unique()
     )
 
     output_users = set(
-        similarity["user_id"].astype(int)
+        similarity["user_id"]
+        .astype(int)
+    )
+
+    missing_users = source_users - output_users
+    extra_users = output_users - source_users
+
+    assert not missing_users, (
+        "Users missing from "
+        "user_similarity.parquet: "
+        f"{sorted(missing_users)}"
+    )
+
+    assert not extra_users, (
+        "Users in parquet but not ratings.csv: "
+        f"{sorted(extra_users)}"
     )
 
     assert source_users == output_users
@@ -258,14 +270,7 @@ def test_all_users_transferred(
     print("  All users transferred    : OK")
 
 
-# ============================================================
-# TEST 6
-# ============================================================
-
-def test_no_self_relationship(
-    similarity,
-):
-
+def test_no_self_relationship(similarity):
     print("\nSELF RELATIONSHIP")
 
     total = len(similarity)
@@ -274,7 +279,6 @@ def test_no_self_relationship(
         similarity.itertuples(index=False),
         start=1,
     ):
-
         user_id = int(row.user_id)
 
         progress(
@@ -292,19 +296,10 @@ def test_no_self_relationship(
             f"User {user_id} is related to itself."
         )
 
-    print(
-        "  No self relationships    : OK"
-    )
+    print("  No self relationships    : OK")
 
 
-# ============================================================
-# TEST 7
-# ============================================================
-
-def test_no_duplicate_related_users(
-    similarity,
-):
-
+def test_no_duplicate_related_users(similarity):
     print("\nDUPLICATE RELATIONSHIPS")
 
     total = len(similarity)
@@ -313,7 +308,6 @@ def test_no_duplicate_related_users(
         similarity.itertuples(index=False),
         start=1,
     ):
-
         user_id = int(row.user_id)
 
         progress(
@@ -334,26 +328,21 @@ def test_no_duplicate_related_users(
             f"for user {user_id}."
         )
 
-    print(
-        "  No duplicate relationships : OK"
-    )
+    print("  No duplicate relationships : OK")
 
-
-# ============================================================
-# TEST 8
-# ============================================================
 
 def test_related_users_exist(
     source_data,
     similarity,
 ):
-
     print("\nRELATED USER VALIDITY")
 
     ratings, _ = source_data
 
     source_users = set(
-        ratings["userId"].unique()
+        ratings["userId"]
+        .astype(int)
+        .unique()
     )
 
     total = len(similarity)
@@ -362,7 +351,6 @@ def test_related_users_exist(
         similarity.itertuples(index=False),
         start=1,
     ):
-
         user_id = int(row.user_id)
 
         progress(
@@ -386,21 +374,40 @@ def test_related_users_exist(
             f"{sorted(invalid_users)}"
         )
 
-    print(
-        "\n  All related users exist  : OK"
-    )
+    print("\n  All related users exist   : OK")
 
-
-# ============================================================
-# TEST 9
-# ============================================================
 
 def test_similarity_logic(
+    source_data,
     similarity,
-    expected_user_genres,
 ):
-
     print("\nSIMILARITY LOGIC")
+
+    ratings, movies = source_data
+
+    high_rated = ratings[
+        ratings["rating"] >= HIGH_RATING_THRESHOLD
+    ].copy()
+
+    high_rated = high_rated.merge(
+        movies[["movieId", "genres_list"]],
+        on="movieId",
+        how="inner",
+        validate="many_to_one",
+    )
+
+    user_genres = {}
+
+    for row in high_rated.itertuples(
+        index=False
+    ):
+        user_id = int(row.userId)
+
+        if user_id not in user_genres:
+            user_genres[user_id] = set()
+
+        for genre in row.genres_list:
+            user_genres[user_id].add(genre)
 
     total = len(similarity)
 
@@ -408,7 +415,6 @@ def test_similarity_logic(
         similarity.itertuples(index=False),
         start=1,
     ):
-
         user_id = int(row.user_id)
 
         progress(
@@ -417,61 +423,48 @@ def test_similarity_logic(
             user_id,
         )
 
-        actual_related = sorted(
+        actual_related = {
             int(x)
             for x in row.related_user_ids
+        }
+
+        current_genres = user_genres.get(
+            user_id,
+            set(),
         )
 
-        current_genres = (
-            expected_user_genres.get(
-                user_id,
-                set(),
-            )
-        )
+        expected_related = set()
 
-        expected_related = []
-
-        for other_user_id, other_genres in (
-            expected_user_genres.items()
-        ):
+        for (
+            other_user_id,
+            other_genres,
+        ) in user_genres.items():
 
             if other_user_id == user_id:
                 continue
 
-            shared_genres = (
-                current_genres
-                .intersection(other_genres)
-            )
-
-            if shared_genres:
-                expected_related.append(
+            if current_genres.intersection(
+                other_genres
+            ):
+                expected_related.add(
                     other_user_id
                 )
-
-        expected_related = sorted(
-            expected_related
-        )
 
         assert actual_related == expected_related, (
             f"\nSimilarity mismatch "
             f"for user {user_id}\n"
-            f"Expected: {expected_related}\n"
-            f"Actual:   {actual_related}"
+            f"Expected: "
+            f"{sorted(expected_related)}\n"
+            f"Actual:   "
+            f"{sorted(actual_related)}"
         )
 
-    print(
-        "\n  Similarity logic         : OK"
-    )
+    print("\n  Similarity logic          : OK")
 
-
-# ============================================================
-# TEST 10
-# ============================================================
 
 def test_relationship_is_symmetric(
     similarity,
 ):
-
     print("\nSYMMETRIC RELATIONSHIPS")
 
     relationship_map = {}
@@ -479,7 +472,6 @@ def test_relationship_is_symmetric(
     for row in similarity.itertuples(
         index=False
     ):
-
         user_id = int(row.user_id)
 
         relationship_map[user_id] = {
@@ -493,52 +485,48 @@ def test_relationship_is_symmetric(
         sorted(relationship_map),
         start=1,
     ):
-
         progress(
             index,
             total,
             user_id,
         )
 
-        for related_user in relationship_map[user_id]:
-
-            assert user_id in relationship_map.get(
-                related_user,
-                set(),
+        for related_user in (
+            relationship_map[user_id]
+        ):
+            assert user_id in (
+                relationship_map.get(
+                    related_user,
+                    set(),
+                )
             ), (
                 f"Relationship is not symmetric: "
                 f"{user_id} -> {related_user}"
             )
 
-    print(
-        "\n  Symmetric relationships  : OK"
-    )
+    print("\n  Symmetric relationships  : OK")
 
-
-# ============================================================
-# TEST 11
-# ============================================================
 
 def test_no_missing_values(similarity):
-
     print("\nMISSING VALUES")
 
-    assert not similarity["user_id"].isna().any()
-    assert not similarity["related_user_ids"].isna().any()
+    assert not similarity[
+        "user_id"
+    ].isna().any()
+
+    assert not similarity[
+        "related_user_ids"
+    ].isna().any()
 
     print("  user_id                  : OK")
     print("  related_user_ids         : OK")
 
 
-# ============================================================
-# TEST 12
-# ============================================================
-
-def test_related_users_are_sorted(
+def test_related_users_are_sorted_by_5_and_4_star(
     similarity,
+    user_rating_stats,
 ):
-
-    print("\nRELATIONSHIP ORDER")
+    print("\nRELATIONSHIP RANKING")
 
     total = len(similarity)
 
@@ -546,7 +534,6 @@ def test_related_users_are_sorted(
         similarity.itertuples(index=False),
         start=1,
     ):
-
         user_id = int(row.user_id)
 
         progress(
@@ -560,37 +547,165 @@ def test_related_users_are_sorted(
             for x in row.related_user_ids
         ]
 
-        assert related_users == sorted(
-            related_users
+        scores = []
+
+        for related_user_id in related_users:
+            five_star, four_star = (
+                calculate_common_score(
+                    user_id,
+                    related_user_id,
+                    user_rating_stats,
+                )
+            )
+
+            scores.append(
+                (
+                    related_user_id,
+                    five_star,
+                    four_star,
+                )
+            )
+
+        expected_order = sorted(
+            scores,
+            key=lambda x: (
+                -x[1],
+                -x[2],
+                x[0],
+            ),
+        )
+
+        actual_order = [
+            item[0]
+            for item in scores
+        ]
+
+        expected_user_order = [
+            item[0]
+            for item in expected_order
+        ]
+
+        assert (
+            actual_order
+            == expected_user_order
         ), (
-            f"related_user_ids is not sorted "
-            f"for user {user_id}."
+            f"\nWrong ranking "
+            f"for user {user_id}\n"
+            f"Expected: {expected_order}\n"
+            f"Actual:   {scores}"
         )
 
     print(
-        "\n  Related users sorted     : OK"
+        "\n  5-star score DESC         : OK"
+    )
+
+    print(
+        "  4-star score DESC on tie : OK"
+    )
+
+    print(
+        "  user_id ASC on full tie  : OK"
+    )
+
+    print(
+        "  Ranking order             : OK"
     )
 
 
-# ============================================================
-# TEST 13
-# ============================================================
+def test_ranking_examples(
+    similarity,
+    user_rating_stats,
+):
+    print("\nRANKING EXAMPLES")
+
+    checked = 0
+
+    for row in similarity.itertuples(
+        index=False
+    ):
+        user_id = int(row.user_id)
+
+        related_users = [
+            int(x)
+            for x in row.related_user_ids
+        ]
+
+        if len(related_users) < 2:
+            continue
+
+        for i in range(
+            len(related_users) - 1
+        ):
+            current_user = related_users[i]
+            next_user = related_users[i + 1]
+
+            current_5, current_4 = (
+                calculate_common_score(
+                    user_id,
+                    current_user,
+                    user_rating_stats,
+                )
+            )
+
+            next_5, next_4 = (
+                calculate_common_score(
+                    user_id,
+                    next_user,
+                    user_rating_stats,
+                )
+            )
+
+            assert (
+                current_5 > next_5
+                or (
+                    current_5 == next_5
+                    and current_4 > next_4
+                )
+                or (
+                    current_5 == next_5
+                    and current_4 == next_4
+                    and current_user < next_user
+                )
+            ), (
+                f"\nInvalid order "
+                f"for user {user_id}\n"
+                f"Current: User {current_user} "
+                f"(5★={current_5}, "
+                f"4★={current_4})\n"
+                f"Next: User {next_user} "
+                f"(5★={next_5}, "
+                f"4★={next_4})"
+            )
+
+            checked += 1
+
+    print(
+        f"  Consecutive relationships checked : "
+        f"{checked:,}"
+    )
+
+    print(
+        "  Ranking rule                        : OK"
+    )
+
 
 def test_summary(
     source_data,
     similarity,
 ):
-
     print("\n")
     print("=" * 70)
-    print("USER SIMILARITY VALIDATION SUMMARY")
+    print(
+        "USER SIMILARITY VALIDATION SUMMARY"
+    )
     print("=" * 70)
 
     ratings, movies = source_data
 
     relationship_counts = (
-        similarity["related_user_ids"]
-        .map(len)
+        similarity[
+            "related_user_ids"
+        ].map(len)
     )
 
     print("\nSOURCE")
@@ -648,5 +763,9 @@ def test_summary(
         print(f"  - {column}")
 
     print("\n" + "=" * 70)
-    print("USER SIMILARITY VALIDATION: PASSED")
+
+    print(
+        "USER SIMILARITY VALIDATION: PASSED"
+    )
+
     print("=" * 70)

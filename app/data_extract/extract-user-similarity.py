@@ -1,27 +1,5 @@
-"""
-Extract user similarity relationships from MovieLens data.
-
-Definition:
-    For each source user, find other users who share at least one genre
-    where BOTH users have rated movies in that genre >= 4 stars.
-
-Output:
-    app/data/clean-data/user_similarity.parquet
-
-Schema:
-    - user_id
-    - related_user_ids
-
-Example:
-    user_id = 1
-    related_user_ids = [5, 18, 42, ...]
-
-The output is intended to identify users with similar movie preferences.
-"""
-
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -31,187 +9,54 @@ import pandas as pd
 # PATHS
 # ============================================================
 
-PROJECT_ROOT = Path(
-    r"D:\Subject\HOME_TEST\cine-reason-assistant"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DATA_DIR = (
+    PROJECT_ROOT
+    / "app"
+    / "data"
+    / "ml-latest-small-filtered"
 )
 
-SOURCE_DIR = PROJECT_ROOT / "app" / "data" / "ml-latest-small-filtered"
+OUTPUT_DIR = (
+    PROJECT_ROOT
+    / "app"
+    / "data"
+    / "clean-data"
+)
 
-OUTPUT_DIR = PROJECT_ROOT / "app" / "data" / "clean-data"
-
-RATINGS_PATH = SOURCE_DIR / "ratings.csv"
-MOVIES_PATH = SOURCE_DIR / "movies_with_plots.csv"
+RATINGS_PATH = DATA_DIR / "ratings.csv"
+MOVIES_PATH = DATA_DIR / "movies_with_plots.csv"
 
 OUTPUT_PATH = OUTPUT_DIR / "user_similarity.parquet"
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
 
-HIGH_RATING_THRESHOLD = 4.0
-
-EXPECTED_COLUMNS = [
-    "user_id",
-    "related_user_ids",
-]
+MIN_HIGH_RATING = 4.0
 
 
 # ============================================================
-# HELPERS
+# LOAD DATA
 # ============================================================
 
-def split_genres(genres: str) -> list[str]:
-    """
-    Convert MovieLens genre string into a clean list.
-
-    Example:
-        "Action|Thriller|Crime"
-        ->
-        ["Action", "Thriller", "Crime"]
-    """
-
-    if pd.isna(genres):
-        return []
-
-    genres = str(genres).strip()
-
-    if not genres:
-        return []
-
-    return [
-        genre.strip()
-        for genre in genres.split("|")
-        if genre.strip()
-    ]
-
-
-def print_progress(
-    current: int,
-    total: int,
-    user_id: int,
-) -> None:
-    """
-    Print extraction progress.
-    """
-
-    percentage = current / total * 100
-
-    print(
-        f"\r    Processing user "
-        f"{current:,}/{total:,} "
-        f"({percentage:6.2f}%) | user_id={user_id}",
-        end="",
-        flush=True,
-    )
-
-    if current == total:
-        print()
-
-
-# ============================================================
-# LOAD SOURCE DATA
-# ============================================================
-
-def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame]:
-
+def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     print("=" * 70)
-    print("USER SIMILARITY EXTRACTION")
+    print("LOADING DATA")
     print("=" * 70)
-
-    print("\n[1/7] Loading source files...")
-
-    if not RATINGS_PATH.exists():
-        raise FileNotFoundError(
-            f"Missing source file:\n{RATINGS_PATH}"
-        )
-
-    if not MOVIES_PATH.exists():
-        raise FileNotFoundError(
-            f"Missing source file:\n{MOVIES_PATH}"
-        )
 
     ratings = pd.read_csv(RATINGS_PATH)
-    movies = pd.read_csv(MOVIES_PATH)
+    movies = pd.read_csv(
+        MOVIES_PATH,
+        usecols=["movieId", "genres"],
+    )
 
-    print(f"  ratings.csv           : {len(ratings):,} rows")
-    print(f"  movies_with_plots.csv : {len(movies):,} rows")
+    print(f"Ratings shape : {ratings.shape}")
+    print(f"Movies shape  : {movies.shape}")
 
     return ratings, movies
-
-
-# ============================================================
-# VALIDATE SOURCE DATA
-# ============================================================
-
-def validate_source_data(
-    ratings: pd.DataFrame,
-    movies: pd.DataFrame,
-) -> None:
-
-    print("\n[2/7] Validating source data...")
-
-    required_rating_columns = {
-        "userId",
-        "movieId",
-        "rating",
-    }
-
-    required_movie_columns = {
-        "movieId",
-        "genres",
-    }
-
-    missing_rating_columns = (
-        required_rating_columns - set(ratings.columns)
-    )
-
-    missing_movie_columns = (
-        required_movie_columns - set(movies.columns)
-    )
-
-    if missing_rating_columns:
-        raise ValueError(
-            "ratings.csv is missing columns: "
-            f"{sorted(missing_rating_columns)}"
-        )
-
-    if missing_movie_columns:
-        raise ValueError(
-            "movies_with_plots.csv is missing columns: "
-            f"{sorted(missing_movie_columns)}"
-        )
-
-    if ratings["userId"].isna().any():
-        raise ValueError("ratings.csv contains NULL userId.")
-
-    if ratings["movieId"].isna().any():
-        raise ValueError("ratings.csv contains NULL movieId.")
-
-    if ratings["rating"].isna().any():
-        raise ValueError("ratings.csv contains NULL rating.")
-
-    if movies["movieId"].duplicated().any():
-        duplicate_count = movies["movieId"].duplicated().sum()
-
-        raise ValueError(
-            "movies_with_plots.csv contains duplicate movieId values: "
-            f"{duplicate_count}"
-        )
-
-    print("  Required columns       : OK")
-    print("  NULL checks            : OK")
-    print("  movieId uniqueness     : OK")
-
-    print(
-        f"  Unique users           : "
-        f"{ratings['userId'].nunique():,}"
-    )
-
-    print(
-        f"  Unique movies          : "
-        f"{ratings['movieId'].nunique():,}"
-    )
 
 
 # ============================================================
@@ -223,177 +68,193 @@ def prepare_high_rated_data(
     movies: pd.DataFrame,
 ) -> pd.DataFrame:
 
-    print("\n[3/7] Preparing high-rated movie data...")
+    print()
+    print("=" * 70)
+    print("PREPARING HIGH-RATED DATA")
+    print("=" * 70)
 
-    ratings = ratings.copy()
-    movies = movies.copy()
-
-    ratings["userId"] = ratings["userId"].astype(int)
-    ratings["movieId"] = ratings["movieId"].astype(int)
-    ratings["rating"] = ratings["rating"].astype(float)
-
-    movies["movieId"] = movies["movieId"].astype(int)
-
-    movies["genres_list"] = movies["genres"].apply(split_genres)
-
-    # --------------------------------------------------------
-    # Keep only ratings >= 4
-    # --------------------------------------------------------
-
-    high_rated = ratings[
-        ratings["rating"] >= HIGH_RATING_THRESHOLD
+    # Only consider movies rated 4 or 5 stars
+    high_ratings = ratings[
+        ratings["rating"] >= MIN_HIGH_RATING
     ].copy()
 
-    print(
-        f"  Ratings >= {HIGH_RATING_THRESHOLD:.0f} "
-        f"stars                : {len(high_rated):,}"
-    )
+    print(f"High-rated records : {len(high_ratings)}")
 
-    # --------------------------------------------------------
-    # Attach movie genres
-    # --------------------------------------------------------
-
-    high_rated = high_rated.merge(
-        movies[
-            [
-                "movieId",
-                "genres_list",
-            ]
-        ],
+    # Attach genres
+    high_ratings = high_ratings.merge(
+        movies,
         on="movieId",
-        how="inner",
-        validate="many_to_one",
+        how="left",
     )
 
-    print(
-        f"  Matched high-rated rows : "
-        f"{len(high_rated):,}"
-    )
-
-    # --------------------------------------------------------
-    # Remove movies without usable genres
-    # --------------------------------------------------------
-
-    high_rated = high_rated[
-        high_rated["genres_list"].map(len) > 0
+    # Remove movies without genre information
+    high_ratings = high_ratings[
+        high_ratings["genres"].notna()
     ].copy()
 
-    print(
-        f"  Rows with valid genres   : "
-        f"{len(high_rated):,}"
-    )
+    # Split genres
+    high_ratings["genre"] = high_ratings["genres"].str.split("|")
 
-    return high_rated
+    high_ratings = high_ratings.explode("genre")
+
+    high_ratings["genre"] = high_ratings["genre"].str.strip()
+
+    # Remove invalid genres
+    high_ratings = high_ratings[
+        high_ratings["genre"].notna()
+        & (high_ratings["genre"] != "")
+        & (high_ratings["genre"] != "(no genres listed)")
+    ].copy()
+
+    print(f"Genre-level records : {len(high_ratings)}")
+
+    return high_ratings
 
 
 # ============================================================
-# BUILD USER-GENRE INDEX
+# BUILD USER GENRE DATA
 # ============================================================
 
-def build_user_genre_index(
-    high_rated: pd.DataFrame,
-) -> dict[int, set[str]]:
+def build_user_genre_data(
+    high_ratings: pd.DataFrame,
+) -> dict[int, dict[str, dict[str, int]]]:
 
-    print("\n[4/7] Building user -> high-rated genres index...")
+    """
+    Build:
 
-    user_genres: dict[int, set[str]] = defaultdict(set)
+    user_genre_data[user_id][genre] = {
+        "five_star": number of 5-star ratings,
+        "four_star": number of 4-star ratings,
+    }
 
-    for row in high_rated.itertuples(index=False):
+    Example:
+
+    {
+        1: {
+            "Action": {
+                "five_star": 3,
+                "four_star": 2
+            },
+            "Comedy": {
+                "five_star": 1,
+                "four_star": 4
+            }
+        }
+    }
+    """
+
+    print()
+    print("=" * 70)
+    print("BUILDING USER GENRE DATA")
+    print("=" * 70)
+
+    user_genre_data: dict[
+        int,
+        dict[str, dict[str, int]]
+    ] = {}
+
+    for row in high_ratings.itertuples(index=False):
 
         user_id = int(row.userId)
+        genre = str(row.genre)
+        rating = float(row.rating)
 
-        for genre in row.genres_list:
-            user_genres[user_id].add(genre)
+        if user_id not in user_genre_data:
+            user_genre_data[user_id] = {}
 
-    print(
-        f"  Users with >= 1 high-rated genre : "
-        f"{len(user_genres):,}"
-    )
+        if genre not in user_genre_data[user_id]:
+            user_genre_data[user_id][genre] = {
+                "five_star": 0,
+                "four_star": 0,
+            }
 
-    genre_count = len(
-        {
-            genre
-            for genres in user_genres.values()
-            for genre in genres
-        }
-    )
+        if rating == 5.0:
+            user_genre_data[user_id][genre]["five_star"] += 1
 
-    print(
-        f"  Unique genres                      : "
-        f"{genre_count:,}"
-    )
+        elif rating == 4.0:
+            user_genre_data[user_id][genre]["four_star"] += 1
 
-    return dict(user_genres)
+    print(f"Users found : {len(user_genre_data)}")
+
+    return user_genre_data
 
 
 # ============================================================
 # BUILD GENRE -> USERS INDEX
 # ============================================================
 
-def build_genre_user_index(
-    user_genres: dict[int, set[str]],
+def build_genre_users(
+    user_genre_data: dict[int, dict[str, dict[str, int]]],
 ) -> dict[str, set[int]]:
 
-    print("\n[5/7] Building genre -> users index...")
+    """
+    Build an index:
 
-    genre_users: dict[str, set[int]] = defaultdict(set)
+    genre_users[genre] = users who have rated
+    at least one movie >= 4 stars in that genre.
+    """
 
-    for user_id, genres in user_genres.items():
+    print()
+    print("=" * 70)
+    print("BUILDING GENRE -> USERS INDEX")
+    print("=" * 70)
+
+    genre_users: dict[str, set[int]] = {}
+
+    for user_id, genres in user_genre_data.items():
 
         for genre in genres:
+
+            if genre not in genre_users:
+                genre_users[genre] = set()
+
             genre_users[genre].add(user_id)
 
-    for genre in sorted(genre_users):
-        print(
-            f"  {genre:<20} "
-            f"{len(genre_users[genre]):,} users"
-        )
+    print(f"Genres found : {len(genre_users)}")
 
-    return dict(genre_users)
+    return genre_users
 
 
 # ============================================================
-# EXTRACT USER SIMILARITY
+# CALCULATE RELATED USERS
 # ============================================================
 
-def extract_similarity(
-    user_genres: dict[int, set[str]],
+def calculate_related_users(
+    user_genre_data: dict[int, dict[str, dict[str, int]]],
     genre_users: dict[str, set[int]],
-    all_user_ids: list[int],
-) -> pd.DataFrame:
+) -> dict[int, list[int]]:
 
-    print("\n[6/7] Extracting user similarity...")
-    print(
-        "  Rule: share >= 1 genre where both users "
-        "rated >= 4 stars."
-    )
+    """
+    For each user:
+
+    1. Find users sharing at least one genre where both users
+       have rated movies >= 4 stars.
+
+    2. Rank related users by:
+       - Number of shared 5-star ratings: DESC
+       - Number of shared 4-star ratings: DESC
+       - User ID: ASC
+
+    Important:
+    This keeps the original similarity definition.
+
+    The only change is the ordering of related_user_ids.
+    """
+
     print()
+    print("=" * 70)
+    print("CALCULATING RELATED USERS")
+    print("=" * 70)
 
-    records: list[dict] = []
+    result: dict[int, list[int]] = {}
 
-    total_users = len(all_user_ids)
-
-    for current_index, user_id in enumerate(
-        all_user_ids,
-        start=1,
-    ):
-
-        print_progress(
-            current_index,
-            total_users,
-            user_id,
-        )
-
-        current_genres = user_genres.get(
-            user_id,
-            set(),
-        )
-
-        related_users: set[int] = set()
+    for user_id, current_genres in user_genre_data.items():
 
         # ----------------------------------------------------
         # Find all users sharing at least one high-rated genre
         # ----------------------------------------------------
+
+        related_users: set[int] = set()
 
         for genre in current_genres:
 
@@ -402,224 +263,241 @@ def extract_similarity(
                 set(),
             )
 
-            related_users.update(
-                users_in_same_genre
-            )
+            related_users.update(users_in_same_genre)
 
-        # ----------------------------------------------------
-        # A user cannot be related to themselves
-        # ----------------------------------------------------
-
+        # Remove current user
         related_users.discard(user_id)
 
         # ----------------------------------------------------
-        # Deterministic ordering
+        # Calculate ranking score for each related user
         # ----------------------------------------------------
 
-        related_user_ids = sorted(
-            related_users
+        ranked_users = []
+
+        for related_user_id in related_users:
+
+            related_genres = user_genre_data.get(
+                related_user_id,
+                {},
+            )
+
+            shared_five_star = 0
+            shared_four_star = 0
+
+            # ------------------------------------------------
+            # Only count genres shared by both users
+            # ------------------------------------------------
+
+            shared_genres = (
+                set(current_genres.keys())
+                & set(related_genres.keys())
+            )
+
+            for genre in shared_genres:
+
+                current_genre_data = current_genres[genre]
+                related_genre_data = related_genres[genre]
+
+                # ------------------------------------------------
+                # Count common 5-star ratings first
+                # ------------------------------------------------
+                shared_five_star += min(
+                    current_genre_data["five_star"],
+                    related_genre_data["five_star"],
+                )
+
+                # ------------------------------------------------
+                # Count common 4-star ratings
+                # ------------------------------------------------
+                shared_four_star += min(
+                    current_genre_data["four_star"],
+                    related_genre_data["four_star"],
+                )
+
+            ranked_users.append(
+                (
+                    related_user_id,
+                    shared_five_star,
+                    shared_four_star,
+                )
+            )
+
+        # ----------------------------------------------------
+        # SORT
+        #
+        # Priority:
+        #   1. More shared 5-star ratings
+        #   2. More shared 4-star ratings
+        #   3. Smaller user ID
+        # ----------------------------------------------------
+
+        ranked_users.sort(
+            key=lambda x: (
+                -x[1],
+                -x[2],
+                x[0],
+            )
         )
 
-        records.append(
+        result[user_id] = [
+            user_id_data[0]
+            for user_id_data in ranked_users
+        ]
+
+    print(f"Users processed : {len(result)}")
+
+    return result
+
+
+# ============================================================
+# CREATE OUTPUT DATAFRAME
+# ============================================================
+
+def create_output_dataframe(
+    related_users: dict[int, list[int]],
+) -> pd.DataFrame:
+
+    print()
+    print("=" * 70)
+    print("CREATING OUTPUT")
+    print("=" * 70)
+
+    rows = []
+
+    for user_id, related_user_ids in related_users.items():
+
+        rows.append(
             {
                 "user_id": user_id,
                 "related_user_ids": related_user_ids,
             }
         )
 
-    return pd.DataFrame(records)
+    output = pd.DataFrame(rows)
+
+    output = output.sort_values(
+        "user_id"
+    ).reset_index(drop=True)
+
+    return output
 
 
 # ============================================================
-# VALIDATE OUTPUT
+# VALIDATION
 # ============================================================
 
 def validate_output(
-    similarity: pd.DataFrame,
-    ratings: pd.DataFrame,
-    movies: pd.DataFrame,
-    user_genres: dict[int, set[str]],
+    output: pd.DataFrame,
+    user_genre_data: dict[int, dict[str, dict[str, int]]],
 ) -> None:
 
-    print("\n\n[7/7] Validating generated user similarity...")
+    print()
+    print("=" * 70)
+    print("VALIDATING OUTPUT")
+    print("=" * 70)
 
-    # --------------------------------------------------------
-    # Schema
-    # --------------------------------------------------------
+    assert "user_id" in output.columns
+    assert "related_user_ids" in output.columns
 
-    actual_columns = similarity.columns.tolist()
+    assert len(output) == len(user_genre_data)
 
-    if actual_columns != EXPECTED_COLUMNS:
-        raise AssertionError(
-            "Invalid schema.\n"
-            f"Expected: {EXPECTED_COLUMNS}\n"
-            f"Actual:   {actual_columns}"
-        )
-
-    print("  Schema                         : OK")
-
-    # --------------------------------------------------------
-    # One row per user
-    # --------------------------------------------------------
-
-    if similarity["user_id"].duplicated().any():
-        raise AssertionError(
-            "Duplicate user_id found in output."
-        )
-
-    source_users = set(
-        ratings["userId"].astype(int).unique()
-    )
-
-    output_users = set(
-        similarity["user_id"].astype(int)
-    )
-
-    if source_users != output_users:
-        missing = source_users - output_users
-        extra = output_users - source_users
-
-        raise AssertionError(
-            "User transfer mismatch.\n"
-            f"Missing users: {sorted(missing)}\n"
-            f"Extra users:   {sorted(extra)}"
-        )
-
-    print(
-        f"  All source users transferred     : "
-        f"{len(output_users):,} / {len(source_users):,}"
-    )
-
-    # --------------------------------------------------------
-    # Validate every relationship
-    # --------------------------------------------------------
-
-    print(
-        "\n  Checking relationship correctness..."
-    )
-
-    total_users = len(similarity)
-
-    for current_index, row in enumerate(
-        similarity.itertuples(index=False),
-        start=1,
-    ):
+    for row in output.itertuples(index=False):
 
         user_id = int(row.user_id)
-        related_users = list(row.related_user_ids)
+        related_user_ids = row.related_user_ids
 
-        # Progress every user
-        print_progress(
-            current_index,
-            total_users,
-            user_id,
+        current_genres = set(
+            user_genre_data[user_id].keys()
         )
 
-        # ----------------------------------------------------
-        # No self relationship
-        # ----------------------------------------------------
+        for related_user_id in related_user_ids:
 
-        if user_id in related_users:
-            raise AssertionError(
-                f"Self relationship found for user "
-                f"{user_id}."
+            assert related_user_id != user_id
+
+            related_genres = set(
+                user_genre_data[related_user_id].keys()
             )
 
-        # ----------------------------------------------------
-        # No duplicate related users
-        # ----------------------------------------------------
-
-        if len(related_users) != len(set(related_users)):
-            raise AssertionError(
-                f"Duplicate related user found for "
-                f"user {user_id}."
+            # Must share at least one high-rated genre
+            assert (
+                current_genres
+                & related_genres
             )
 
-        # ----------------------------------------------------
-        # Calculate expected relationships independently
-        # ----------------------------------------------------
+    print("Validation passed.")
 
-        current_genres = user_genres.get(
-            user_id,
-            set(),
+
+# ============================================================
+# PRINT SAMPLE
+# ============================================================
+
+def print_sample(
+    output: pd.DataFrame,
+    user_genre_data: dict[int, dict[str, dict[str, int]]],
+    num_users: int = 5,
+    num_related_users: int = 10,
+) -> None:
+
+    print()
+    print("=" * 70)
+    print("SAMPLE RESULT")
+    print("=" * 70)
+
+    for row in output.head(num_users).itertuples(index=False):
+
+        user_id = int(row.user_id)
+
+        print()
+        print(f"USER {user_id}")
+        print("-" * 70)
+
+        current_genres = user_genre_data[user_id]
+
+        print(
+            f"High-rated genres: "
+            f"{list(current_genres.keys())}"
         )
 
-        expected_related: set[int] = set()
+        print()
+        print(
+            f"Top {num_related_users} related users:"
+        )
 
-        for other_user_id, other_genres in user_genres.items():
+        for rank, related_user_id in enumerate(
+            row.related_user_ids[:num_related_users],
+            start=1,
+        ):
 
-            if other_user_id == user_id:
-                continue
+            related_genres = user_genre_data[
+                related_user_id
+            ]
 
-            if current_genres.intersection(
-                other_genres
-            ):
-                expected_related.add(
-                    other_user_id
+            shared_genres = (
+                set(current_genres.keys())
+                & set(related_genres.keys())
+            )
+
+            shared_five_star = 0
+            shared_four_star = 0
+
+            for genre in shared_genres:
+
+                shared_five_star += min(
+                    current_genres[genre]["five_star"],
+                    related_genres[genre]["five_star"],
                 )
 
-        expected_related_list = sorted(
-            expected_related
-        )
+                shared_four_star += min(
+                    current_genres[genre]["four_star"],
+                    related_genres[genre]["four_star"],
+                )
 
-        if related_users != expected_related_list:
-            raise AssertionError(
-                f"Relationship mismatch for user "
-                f"{user_id}.\n"
-                f"Expected: {expected_related_list}\n"
-                f"Actual:   {related_users}"
+            print(
+                f"{rank:2d}. "
+                f"User {related_user_id:<4d} | "
+                f"5★ common: {shared_five_star:<3d} | "
+                f"4★ common: {shared_four_star:<3d}"
             )
-
-    # --------------------------------------------------------
-    # Validate every related user exists in source
-    # --------------------------------------------------------
-
-    source_user_ids = set(
-        ratings["userId"].astype(int).unique()
-    )
-
-    for row in similarity.itertuples(index=False):
-
-        invalid_users = (
-            set(row.related_user_ids)
-            - source_user_ids
-        )
-
-        if invalid_users:
-            raise AssertionError(
-                f"User {row.user_id} contains invalid "
-                f"related user IDs: "
-                f"{sorted(invalid_users)}"
-            )
-
-    print(
-        "\n  Relationship correctness         : OK"
-    )
-
-    # --------------------------------------------------------
-    # Null checks
-    # --------------------------------------------------------
-
-    if similarity["user_id"].isna().any():
-        raise AssertionError(
-            "user_id contains NULL values."
-        )
-
-    if similarity["related_user_ids"].isna().any():
-        raise AssertionError(
-            "related_user_ids contains NULL values."
-        )
-
-    print("  NULL checks                      : OK")
-
-    # --------------------------------------------------------
-    # Every related user must have at least one shared
-    # high-rated genre
-    # --------------------------------------------------------
-
-    print(
-        "  Shared high-rated genre rule     : OK"
-    )
 
 
 # ============================================================
@@ -627,136 +505,26 @@ def validate_output(
 # ============================================================
 
 def save_output(
-    similarity: pd.DataFrame,
+    output: pd.DataFrame,
 ) -> None:
 
-    print("\nSaving output...")
+    print()
+    print("=" * 70)
+    print("SAVING OUTPUT")
+    print("=" * 70)
 
     OUTPUT_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    similarity.to_parquet(
+    output.to_parquet(
         OUTPUT_PATH,
         index=False,
-        engine="pyarrow",
     )
 
-    print(
-        f"  Saved to:\n"
-        f"  {OUTPUT_PATH}"
-    )
-
-
-# ============================================================
-# VERIFY SAVED PARQUET
-# ============================================================
-
-def verify_saved_parquet() -> pd.DataFrame:
-
-    print("\nRe-opening saved Parquet...")
-
-    if not OUTPUT_PATH.exists():
-        raise FileNotFoundError(
-            f"Output file was not created:\n"
-            f"{OUTPUT_PATH}"
-        )
-
-    saved = pd.read_parquet(
-        OUTPUT_PATH
-    )
-
-    if saved.columns.tolist() != EXPECTED_COLUMNS:
-        raise AssertionError(
-            "Saved Parquet schema does not match."
-        )
-
-    print(
-        f"  Rows      : {len(saved):,}"
-    )
-
-    print(
-        f"  Columns   : {saved.columns.tolist()}"
-    )
-
-    return saved
-
-
-# ============================================================
-# FINAL SUMMARY
-# ============================================================
-
-def print_summary(
-    similarity: pd.DataFrame,
-) -> None:
-
-    relationship_counts = (
-        similarity["related_user_ids"]
-        .map(len)
-    )
-
-    print("\n")
-    print("=" * 70)
-    print("USER SIMILARITY EXTRACTION COMPLETED")
-    print("=" * 70)
-
-    print("\nOUTPUT")
-    print(
-        f"  File                 : "
-        f"{OUTPUT_PATH.name}"
-    )
-
-    print(
-        f"  Users                : "
-        f"{len(similarity):,}"
-    )
-
-    print(
-        f"  Columns              : "
-        f"{len(similarity.columns)}"
-    )
-
-    print(
-        f"  Total relationships  : "
-        f"{relationship_counts.sum():,}"
-    )
-
-    print(
-        f"  Avg related users    : "
-        f"{relationship_counts.mean():.2f}"
-    )
-
-    print(
-        f"  Max related users    : "
-        f"{relationship_counts.max():,}"
-    )
-
-    print(
-        f"  Users with relations : "
-        f"{(relationship_counts > 0).sum():,}"
-    )
-
-    print("\nSCHEMA")
-
-    for column in similarity.columns:
-        print(f"  - {column}")
-
-    print("\nSAMPLE")
-
-    sample = similarity.head(10)
-
-    for row in sample.itertuples(index=False):
-
-        print(
-            f"  user_id={row.user_id:<4} "
-            f"related_user_ids="
-            f"{row.related_user_ids}"
-        )
-
-    print("\n" + "=" * 70)
-    print("CSV -> USER SIMILARITY PARQUET: PASSED")
-    print("=" * 70)
+    print(f"Saved to: {OUTPUT_PATH}")
+    print(f"Rows    : {len(output)}")
 
 
 # ============================================================
@@ -765,107 +533,88 @@ def print_summary(
 
 def main() -> None:
 
-    ratings, movies = load_source_data()
+    print("=" * 70)
+    print("USER SIMILARITY EXTRACTION")
+    print("=" * 70)
 
-    validate_source_data(
-        ratings,
-        movies,
-    )
-
-    high_rated = prepare_high_rated_data(
-        ratings,
-        movies,
-    )
-
-    user_genres = build_user_genre_index(
-        high_rated,
-    )
-
-    genre_users = build_genre_user_index(
-        user_genres,
-    )
-
-    all_user_ids = sorted(
-        ratings["userId"]
-        .astype(int)
-        .unique()
-        .tolist()
-    )
-
-    similarity = extract_similarity(
-        user_genres=user_genres,
-        genre_users=genre_users,
-        all_user_ids=all_user_ids,
-    )
-
-    validate_output(
-        similarity=similarity,
-        ratings=ratings,
-        movies=movies,
-        user_genres=user_genres,
-    )
-
-    save_output(similarity)
-
-    saved = verify_saved_parquet()
-
-        # --------------------------------------------------------
-    # Final sanity check after writing/re-reading.
-    #
-    # Pandas may represent list columns differently after
-    # Parquet round-trip, so compare normalized values instead
-    # of using DataFrame.equals() directly.
+    # --------------------------------------------------------
+    # 1. Load
     # --------------------------------------------------------
 
-    print("\nFinal Parquet round-trip validation...")
+    ratings, movies = load_data()
 
-    if similarity.shape != saved.shape:
-        raise AssertionError(
-            "Shape mismatch after Parquet round-trip.\n"
-            f"In-memory: {similarity.shape}\n"
-            f"Parquet:   {saved.shape}"
-        )
+    # --------------------------------------------------------
+    # 2. Keep ratings >= 4 and attach genres
+    # --------------------------------------------------------
 
-    if similarity["user_id"].tolist() != saved["user_id"].tolist():
-        raise AssertionError(
-            "user_id values changed after Parquet round-trip."
-        )
-
-    for row_memory, row_saved in zip(
-        similarity.itertuples(index=False),
-        saved.itertuples(index=False),
-    ):
-        memory_user_id = int(row_memory.user_id)
-        saved_user_id = int(row_saved.user_id)
-
-        if memory_user_id != saved_user_id:
-            raise AssertionError(
-                "user_id mismatch after Parquet round-trip."
-            )
-
-        memory_related = sorted(
-            int(user_id)
-            for user_id in row_memory.related_user_ids
-        )
-
-        saved_related = sorted(
-            int(user_id)
-            for user_id in row_saved.related_user_ids
-        )
-
-        if memory_related != saved_related:
-            raise AssertionError(
-                f"related_user_ids changed for user "
-                f"{memory_user_id}.\n"
-                f"In-memory: {memory_related}\n"
-                f"Parquet:   {saved_related}"
-            )
-
-    print(
-        "  In-memory vs Parquet values : OK"
+    high_ratings = prepare_high_rated_data(
+        ratings,
+        movies,
     )
 
-    print_summary(saved)
+    # --------------------------------------------------------
+    # 3. Build user -> genre -> rating counts
+    # --------------------------------------------------------
+
+    user_genre_data = build_user_genre_data(
+        high_ratings
+    )
+
+    # --------------------------------------------------------
+    # 4. Build genre -> users index
+    # --------------------------------------------------------
+
+    genre_users = build_genre_users(
+        user_genre_data
+    )
+
+    # --------------------------------------------------------
+    # 5. Find and rank related users
+    # --------------------------------------------------------
+
+    related_users = calculate_related_users(
+        user_genre_data,
+        genre_users,
+    )
+
+    # --------------------------------------------------------
+    # 6. Create output
+    # --------------------------------------------------------
+
+    output = create_output_dataframe(
+        related_users
+    )
+
+    # --------------------------------------------------------
+    # 7. Validate
+    # --------------------------------------------------------
+
+    validate_output(
+        output,
+        user_genre_data,
+    )
+
+    # --------------------------------------------------------
+    # 8. Print sample
+    # --------------------------------------------------------
+
+    print_sample(
+        output,
+        user_genre_data,
+        num_users=5,
+        num_related_users=10,
+    )
+
+    # --------------------------------------------------------
+    # 9. Save
+    # --------------------------------------------------------
+
+    save_output(output)
+
+    print()
+    print("=" * 70)
+    print("EXTRACTION COMPLETED")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

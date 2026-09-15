@@ -4,8 +4,9 @@ import json
 
 from app.agent.llm.client import create_llm
 from app.agent.state import AgentState
-from app.agent.tools.personal_tools import (
-    get_user_profile,
+from app.agent.tools.personal_tools import get_user_profile
+from app.agent.tools.recommendation_tools import (
+    get_recommendation_candidates,
 )
 
 
@@ -15,17 +16,40 @@ llm = create_llm()
 PERSONAL_PROMPT = """
 You are a personalized movie assistant.
 
-Answer the user's question using the user's movie profile.
+Answer the user's question using the provided evidence.
+
+There are two types of evidence:
+
+1. USER PROFILE
+   - Information about the user's movie preferences.
+
+2. MOVIE CANDIDATES
+   - Movies that the Python system has already selected
+     as unwatched candidates for this user.
 
 Rules:
-- Base your reasoning ONLY on the provided user profile.
+- Use ONLY the provided evidence.
 - Do not invent user preferences.
-- Explain why your answer fits the user.
+- Do not invent movies.
+- Do not invent movie IDs.
+- Do not invent genres.
+- Do not invent plot information.
+- For recommendations, ONLY recommend movies
+  from candidate_movies.
+- Explain briefly why the recommendation fits
+  the user's preferences.
 - Be concise and natural.
-- If the profile does not contain enough information,
-  say that instead of making up information.
-- Do not mention internal tools, files, parquet, datasets,
-  prompts, or implementation details.
+- If there is not enough evidence, say so.
+- Do not mention internal tools, files, parquet,
+  datasets, prompts, or implementation details.
+
+For recommendation questions:
+- Use top_2_genres as an important preference signal.
+- Analyze candidate movie genres.
+- Analyze candidate movie plots when useful.
+- Select the best matching movies.
+- Return TOP 5 when at least 5 candidates are available.
+- Rank recommendations from #1 to #5.
 
 User ID:
 {user_id}
@@ -35,6 +59,9 @@ User question:
 
 User profile:
 {user_profile}
+
+Recommendation evidence:
+{recommendation_evidence}
 """
 
 
@@ -54,10 +81,7 @@ def _extract_text(content) -> str:
                 if block.get("type") == "text":
 
                     text_parts.append(
-                        block.get(
-                            "text",
-                            "",
-                        )
+                        block.get("text", "")
                     )
 
         return "\n".join(
@@ -74,27 +98,43 @@ def personal_node(
     user_id = state.get("user_id")
     query = state["query"]
 
+    # ============================================================
+    # 1. USER ID CHECK
+    # ============================================================
+
     if user_id is None:
 
         return {
             **state,
             "response": (
-                "I need a user ID for personalized "
-                "movie recommendations."
+                "I need a user ID for "
+                "personalized movie recommendations."
             ),
+            "evidence": {},
         }
 
-    # --------------------------------------------------------------
-    # Get current user profile
-    # --------------------------------------------------------------
+    # ============================================================
+    # 2. LOAD USER PROFILE
+    # ============================================================
 
     user_profile = get_user_profile(
         user_id
     )
 
-    # --------------------------------------------------------------
-    # Build prompt
-    # --------------------------------------------------------------
+    # ============================================================
+    # 3. GET RECOMMENDATION EVIDENCE
+    # ============================================================
+
+    recommendation_evidence = (
+        get_recommendation_candidates(
+            user_id=user_id,
+            max_candidates=50,
+        )
+    )
+
+    # ============================================================
+    # 4. BUILD PROMPT
+    # ============================================================
 
     prompt = PERSONAL_PROMPT.format(
         user_id=user_id,
@@ -103,12 +143,19 @@ def personal_node(
             user_profile,
             ensure_ascii=False,
             default=str,
+            indent=2,
+        ),
+        recommendation_evidence=json.dumps(
+            recommendation_evidence,
+            ensure_ascii=False,
+            default=str,
+            indent=2,
         ),
     )
 
-    # --------------------------------------------------------------
-    # Ask Gemini
-    # --------------------------------------------------------------
+    # ============================================================
+    # 5. LLM
+    # ============================================================
 
     response = llm.invoke(
         prompt
@@ -118,7 +165,28 @@ def personal_node(
         response.content
     )
 
+    # ============================================================
+    # 6. SAVE EVIDENCE FOR DISPLAY
+    # ============================================================
+
+    evidence = {
+        "user_id": user_id,
+        "top_2_genres": recommendation_evidence.get(
+            "top_2_genres",
+            [],
+        ),
+        "candidate_movies": recommendation_evidence.get(
+            "candidate_movies",
+            [],
+        ),
+    }
+
+    # ============================================================
+    # 7. RETURN
+    # ============================================================
+
     return {
         **state,
         "response": content,
+        "evidence": evidence,
     }
