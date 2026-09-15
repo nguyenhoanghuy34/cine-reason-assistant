@@ -21,3 +21,7 @@ class IntentClassification(BaseModel):
     exclude_terms: list[str] = Field(default_factory=list, description="Natural-language concepts the user wants to avoid.")
     needs_recommendations: bool = False
     needs_genre_analysis: bool = False
+    needs_movie_info: bool = False
+    needs_movie_summary: bool = False
+    needs_user_behavior: bool = False
+    needs_similarity: bool = False

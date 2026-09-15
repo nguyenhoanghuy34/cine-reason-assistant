@@ -4,6 +4,7 @@ from app.agent.tools.personal_tools import get_personal_evidence
 from app.agent.tools.recommendation_tools import get_recommendation_evidence
 from app.agent.tools.blind_spot_tools import get_blind_spot_evidence
 from app.agent.tools.related_user_tools import get_movie_opinions
+from app.agent.tools.user_action_tools import get_user_rating_history, get_user_tags
 
 
 def collect_evidence(loader, *args, **kwargs):
@@ -29,6 +30,9 @@ def personal_node(state: AgentState) -> AgentState:
             evidence["movie_opinions"] = collect_evidence(
                 get_movie_opinions, [user_id], state["movie_titles"]
             )
+        if state.get("needs_user_behavior"):
+            evidence["user_rating_history"] = collect_evidence(get_user_rating_history, user_id)
+            evidence["user_tags"] = collect_evidence(get_user_tags, user_id)
         if state.get("needs_recommendations"):
             evidence["recommendations"] = collect_evidence(
                 get_recommendation_evidence, user_id, constraints=constraints

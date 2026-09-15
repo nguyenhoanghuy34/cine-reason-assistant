@@ -37,3 +37,7 @@ class AgentState(TypedDict, total=False):
     exclude_terms: list[str]
     needs_recommendations: bool
     needs_genre_analysis: bool
+    needs_movie_info: bool
+    needs_movie_summary: bool
+    needs_user_behavior: bool
+    needs_similarity: bool

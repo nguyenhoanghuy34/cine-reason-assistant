@@ -6,6 +6,7 @@ import json
 import time
 
 from app.agent.llm.client import create_llm
+from app.agent.llm.token_budget import compact_value
 from app.agent.tools.personal_tools import get_user_profile
 
 
@@ -76,7 +77,7 @@ def create_user_summary(
 
     prompt = SUMMARY_PROMPT.format(
         profile=json.dumps(
-            profile,
+            compact_value(profile, max_list_items=8, max_dict_items=32),
             ensure_ascii=False,
             default=str,
         )

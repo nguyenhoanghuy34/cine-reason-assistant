@@ -37,9 +37,18 @@ Important:
 - Extract target_user_ids only for explicitly identified dataset users. Keep the
   current user identity separate. For unnamed people do not guess an ID; the
   answer should request clarification unless their preferences are in history.
-- Extract movie_titles when the question asks about opinions on particular films.
+- Extract movie_titles when the question mentions particular films for opinions,
+  metadata, summaries, comparisons, seed preferences or follow-up references.
 - Set needs_recommendations for recommendation requests, and needs_genre_analysis
   for genre exposure, blind spots or preference analysis.
+- Set needs_movie_info when the user asks facts, metadata, tags, genres or
+  ratings for specific movies. Set needs_movie_summary when the user asks what a
+  movie is about or asks to summarize a specific movie.
+- Set needs_user_behavior when the question needs the current user's watched,
+  rated, liked or disliked history. Follow-up questions such as "why would I
+  like those?" need user behavior.
+- Set needs_similarity when the question needs similar users, taste overlap,
+  user-to-user comparison or opinions from people like the current user.
 - For recommendation requests, extract reusable retrieval constraints:
   preferred_genres, excluded_genres, include_terms and exclude_terms. Use these
   for natural wording such as "dark", "psychological", "with a twist",

@@ -201,6 +201,28 @@ def _score_candidates(candidates: pd.DataFrame, constraints: dict[str, Any]) -> 
     return candidates.sort_values(["_constraint_score", "_order"], ascending=[False, True])
 
 
+def _score_user_fit(candidates: pd.DataFrame, preferred_genres: list[str]) -> pd.DataFrame:
+    candidates = candidates.copy()
+    preferred = _normalize_terms(preferred_genres)
+    genre_text = candidates["genres"].astype(str).str.lower()
+    candidates["_genre_score"] = genre_text.map(
+        lambda text: sum(2 for genre in preferred if genre in text)
+    )
+    candidates["_average_rating"] = candidates["_average_rating"].fillna(0.0)
+    candidates["_rating_count"] = candidates["_rating_count"].fillna(0)
+    candidates["_fit_score"] = (
+        candidates.get("_constraint_score", 0)
+        +
+        candidates["_genre_score"]
+        + candidates["_average_rating"]
+        + candidates["_rating_count"].clip(upper=25) / 10
+    )
+    return candidates.sort_values(
+        ["_fit_score", "_average_rating", "_rating_count"],
+        ascending=[False, False, False],
+    )
+
+
 def get_recommendation_candidates(
     user_id: int,
     max_candidates: int = 50,
@@ -235,29 +257,14 @@ def get_recommendation_candidates(
         user_profile["top_2_genres"]
     )
 
-    movie_ids = _normalize_movie_ids(
+    profile_movie_ids = _normalize_movie_ids(
         user_profile[
             "unwatched_matching_movie_ids"
         ]
     )
 
     # ============================================================
-    # 3. LIMIT CANDIDATES
-    # ============================================================
-
-    movie_ids = movie_ids[
-        :max_candidates
-    ]
-
-    if not movie_ids:
-        return {
-            "user_id": user_id,
-            "top_2_genres": top_2_genres,
-            "candidate_movies": [],
-        }
-
-    # ============================================================
-    # 4. LOAD MOVIE DATA
+    # 3. LOAD MOVIE AND RATING DATA
     # ============================================================
 
     movies = pd.read_csv(
@@ -269,21 +276,47 @@ def get_recommendation_candidates(
     ].astype(int)
 
     # ============================================================
-    # 5. FILTER BY MOVIE IDS
+    # 4. BUILD UNWATCHED CANDIDATE POOL
     # ============================================================
 
-    candidates = movies[
-        movies["movieId"].isin(movie_ids)
-    ].copy()
+    ratings = pd.read_csv(SOURCE_DATA_DIR / "ratings.csv")
+    watched_movie_ids = set(
+        ratings.loc[ratings["userId"] == user_id, "movieId"].astype(int)
+    )
+    if profile_movie_ids:
+        pool_ids = [
+            movie_id for movie_id in profile_movie_ids
+            if movie_id not in watched_movie_ids
+        ]
+    else:
+        pool_ids = [
+            int(movie_id) for movie_id in movies["movieId"].tolist()
+            if int(movie_id) not in watched_movie_ids
+        ]
+
+    if not pool_ids:
+        return {
+            "user_id": user_id,
+            "top_2_genres": top_2_genres,
+            "constraints": constraints or {},
+            "candidate_movies": [],
+        }
+
+    candidates = movies[movies["movieId"].isin(pool_ids)].copy()
+    rating_stats = (
+        ratings.groupby("movieId")
+        .agg(_average_rating=("rating", "mean"), _rating_count=("rating", "count"))
+        .reset_index()
+    )
+    candidates = candidates.merge(rating_stats, on="movieId", how="left")
 
     # ============================================================
-    # 6. PRESERVE ORIGINAL MOVIE ID ORDER
+    # 5. SCORE AND FILTER
     # ============================================================
 
     movie_order = {
         movie_id: index
-        for index, movie_id
-        in enumerate(movie_ids)
+        for index, movie_id in enumerate(pool_ids)
     }
 
     candidates["_order"] = candidates[
@@ -293,6 +326,8 @@ def get_recommendation_candidates(
     candidates = candidates.sort_values("_order")
     constraints = constraints or {}
     candidates = _score_candidates(candidates, constraints)
+    candidates = _score_user_fit(candidates, top_2_genres)
+    candidates = candidates.head(max_candidates)
 
     # ============================================================
     # 7. BUILD LLM EVIDENCE
@@ -300,27 +335,27 @@ def get_recommendation_candidates(
 
     candidate_movies = []
 
-    for row in candidates.itertuples(
-        index=False
-    ):
+    for _, row in candidates.iterrows():
         candidate_movies.append(
             {
                 "movie_id": int(
-                    row.movieId
+                    row["movieId"]
                 ),
                 "title": str(
-                    row.title
+                    row["title"]
                 ),
                 "year": (
-                    int(row.year)
-                    if pd.notna(row.year)
+                    int(row["year"])
+                    if pd.notna(row["year"])
                     else None
                 ),
                 "genres": str(
-                    row.genres
+                    row["genres"]
                 ),
+                "average_rating": round(float(row["_average_rating"]), 2),
+                "rating_count": int(row["_rating_count"]),
                 "plot": str(
-                    row.plot
+                    row["plot"]
                 ),
             }
         )

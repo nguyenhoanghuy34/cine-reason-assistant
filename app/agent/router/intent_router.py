@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.agent.llm.client import create_llm
 from app.agent.llm.prompts import INTENT_ROUTER_PROMPT
+from app.agent.llm.token_budget import compact_history, compact_value
 from app.agent.router.schemas import IntentClassification
 from app.agent.state import AgentState
 from app.agent.tools.personal_tools import get_user_profile
@@ -32,7 +33,7 @@ class IntentRouter:
             except (FileNotFoundError, ValueError):
                 user_profile = {"user_id": user_id, "status": "profile unavailable"}
 
-        history = state.get("chat_history", [])
+        history = compact_history(state.get("chat_history", []), max_items=6)
         history_text = "\n".join(
             f"- {item}" for item in history if isinstance(item, str) and item.strip()
         )
@@ -41,7 +42,7 @@ class IntentRouter:
             user_id=user_id,
             query=query,
             chat_history=history_text or "No previous conversation yet.",
-            user_summary=user_profile,
+            user_summary=compact_value(user_profile, max_list_items=5, max_dict_items=24),
         )
 
         result = self.llm.invoke(
@@ -60,6 +61,10 @@ class IntentRouter:
             "exclude_terms": result.exclude_terms,
             "needs_recommendations": result.needs_recommendations,
             "needs_genre_analysis": result.needs_genre_analysis,
+            "needs_movie_info": result.needs_movie_info,
+            "needs_movie_summary": result.needs_movie_summary,
+            "needs_user_behavior": result.needs_user_behavior,
+            "needs_similarity": result.needs_similarity,
             "evidence": {},
             "related_users_evidence": {},
             "response": "",

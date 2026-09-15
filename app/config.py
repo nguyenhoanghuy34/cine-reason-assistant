@@ -12,10 +12,10 @@ ENV_FILE = PROJECT_ROOT / ".env"
 load_dotenv(ENV_FILE)
 
 
-# Gemini API Key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Groq API Key
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not GEMINI_API_KEY:
+if not GROQ_API_KEY:
     raise ValueError(
-        f"GEMINI_API_KEY not found in {ENV_FILE}"
+        f"GROQ_API_KEY not found in {ENV_FILE}"
     )

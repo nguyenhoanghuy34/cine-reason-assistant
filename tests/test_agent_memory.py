@@ -6,8 +6,11 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent import graph
 from app.agent.nodes import personal
+from app.agent.tools import blind_spot_tools
+from app.agent.tools import movie_data_tools
 from app.agent.tools import recommendation_tools
 from app.agent.tools import related_user_tools
+from app.agent.tools import user_action_tools
 
 
 def test_related_users_exclude_only_current_user(monkeypatch):
@@ -20,7 +23,7 @@ def test_related_users_exclude_only_current_user(monkeypatch):
 
 def test_memory_keeps_repeated_turns_and_isolates_users(monkeypatch):
     monkeypatch.setattr(graph.router, "route", lambda state: {"intent": "GENERAL", "evidence": {}})
-    monkeypatch.setattr(graph, "llm_answer_node", lambda state: {"response": "Zodiac"})
+    monkeypatch.setattr(graph, "general_node", lambda state: {"response": "Zodiac"})
     monkeypatch.setattr(graph, "agent", graph.build_graph(MemorySaver()))
     first = graph.invoke_with_memory(15, "Gợi ý phim")
     second = graph.invoke_with_memory(15, "Gợi ý phim")
@@ -64,13 +67,75 @@ def test_recommendation_constraints_filter_excluded_genres(monkeypatch):
     assert filtered["title"].tolist() == ["Heat"]
 
 
+def test_blind_spot_handles_missing_numeric_values(monkeypatch):
+    class ExistingProfile:
+        def exists(self):
+            return True
+
+    monkeypatch.setattr(blind_spot_tools, "PROFILE_FILE", ExistingProfile())
+    monkeypatch.setattr(blind_spot_tools.pd, "read_parquet", lambda _: pd.DataFrame({
+        "user_id": [15],
+        "genre_watch_counts": [{"(no genres listed)": None, "Sci-Fi": 3}],
+        "genre_avg_ratings": [{"(no genres listed)": None, "Sci-Fi": 4.0}],
+        "genre_high_rated_counts": [{"(no genres listed)": None, "Sci-Fi": 2}],
+        "genre_high_rating_ratio": [{"(no genres listed)": None, "Sci-Fi": 0.67}],
+        "unwatched_genres": [["Documentary"]],
+        "underexposed_genres": [["Western"]],
+    }))
+    result = blind_spot_tools.get_blind_spot_evidence(15)
+    missing = [
+        row for row in result["genre_analysis"]
+        if row["genre"] == "(no genres listed)"
+    ][0]
+    assert missing["watch_count"] == 0
+    assert missing["high_rated_count"] == 0
+
+
+def test_movie_info_tool_returns_metadata(monkeypatch):
+    monkeypatch.setattr(movie_data_tools.pd, "read_csv", lambda path: pd.DataFrame({
+        "movieId": [1],
+        "title": ["Heat"],
+        "year": [1995],
+        "genres": ["Action|Crime|Thriller"],
+        "plot": ["A detective pursues a thief."],
+        "rating": [4.0],
+        "tag": ["crime"],
+    }) if str(path).endswith("movies_with_plots.csv") else pd.DataFrame({
+        "movieId": [1],
+        "rating": [4.0],
+        "tag": ["crime"],
+    }))
+    result = movie_data_tools.get_movie_summary(["Heat"])
+    assert result["summaries"][0]["title"] == "Heat"
+
+
+def test_user_rating_history_tool_returns_actions(monkeypatch):
+    def read_csv(path):
+        if str(path).endswith("ratings.csv"):
+            return pd.DataFrame({
+                "userId": [15, 15],
+                "movieId": [1, 2],
+                "rating": [5.0, 3.0],
+                "timestamp": [20, 10],
+            })
+        return pd.DataFrame({
+            "movieId": [1, 2],
+            "title": ["Heat", "Toy Story"],
+            "genres": ["Action", "Animation"],
+        })
+
+    monkeypatch.setattr(user_action_tools.pd, "read_csv", read_csv)
+    result = user_action_tools.get_user_rating_history(15)
+    assert result["top_rated_movies"][0]["title"] == "Heat"
+
+
 def test_memory_survives_reopening_database(monkeypatch):
     import os
     import sqlite3
     from langgraph.checkpoint.sqlite import SqliteSaver
 
     monkeypatch.setattr(graph.router, "route", lambda state: {"intent": "GENERAL"})
-    monkeypatch.setattr(graph, "llm_answer_node", lambda state: {"response": "Zodiac"})
+    monkeypatch.setattr(graph, "general_node", lambda state: {"response": "Zodiac"})
     path = "app/data/test-memory-persistence.sqlite"
     if os.path.exists(path):
         os.unlink(path)

@@ -5,7 +5,7 @@ from pathlib import Path
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.nodes.llm_answer import llm_answer_node
+from app.agent.nodes.general import general_node
 from app.agent.nodes.other import other_node
 from app.agent.nodes.personal import personal_node
 from app.agent.nodes.related_users import related_users_node
@@ -58,7 +58,7 @@ def build_graph(checkpointer=None):
 
     graph.add_node(
         "general",
-        llm_answer_node,
+        general_node,
     )
 
     graph.add_node(

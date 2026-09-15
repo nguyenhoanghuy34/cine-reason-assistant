@@ -61,6 +61,12 @@ def _parse_dict(value):
     return {}
 
 
+def _safe_int(value) -> int:
+    if value is None or pd.isna(value):
+        return 0
+    return int(value)
+
+
 def get_blind_spot_evidence(user_id: int) -> dict:
     if not PROFILE_FILE.exists():
         raise FileNotFoundError(
@@ -92,9 +98,9 @@ def get_blind_spot_evidence(user_id: int) -> dict:
     genre_analysis = []
 
     for genre in sorted(all_genres):
-        watch_count = int(watch_counts.get(genre, 0))
+        watch_count = _safe_int(watch_counts.get(genre, 0))
         avg_rating = avg_ratings.get(genre)
-        high_count = int(high_counts.get(genre, 0))
+        high_count = _safe_int(high_counts.get(genre, 0))
         high_ratio = high_ratios.get(genre)
 
         if watch_count == 0:
