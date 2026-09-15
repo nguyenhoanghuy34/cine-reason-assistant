@@ -181,6 +181,80 @@ Exit the chat with:
 
 ![Personal rating history example](images/Personal_rating.png)
 
+## Manual Test Prompts
+
+To manually test the assistant:
+
+1. Enter any valid `User ID`. User `15` is recommended because it has enough rating history for personalization and similar-user reasoning.
+2. Enter any `Session name`. The session name is used to save and reuse the agent's conversation memory. You can type any name, for example `demo`, `test`, or press Enter to use `default`.
+3. Ask any movie-discovery question. The prompts below are good examples for checking personalization, constraints, similar-user evidence, content search, and multi-turn memory.
+
+### 1. Personalization
+
+```text
+What are my favorite movie genres based on my rating history?
+```
+
+```text
+What kind of movies do I seem to like the most?
+```
+
+### 2. Recommendation
+
+```text
+What should I watch tonight? Recommend 5 movies based on my rating history.
+```
+
+```text
+Recommend 3 movies I haven't watched that match my taste, and explain why.
+```
+
+### 3. Recommendation with Constraints
+
+```text
+I like sci-fi, but I don't want to watch sci-fi tonight. What should I watch instead?
+```
+
+```text
+Recommend something outside my top two genres that I might still enjoy.
+```
+
+### 4. Similar Users
+
+These prompts are useful for checking whether the assistant grounds numbers in retrieved evidence instead of fabricating statistics.
+
+```text
+What do people with similar taste to mine think about Pulp Fiction?
+```
+
+```text
+How many users similar to me rated Pulp Fiction, and what was their average rating?
+```
+
+### 5. Content + Personalization
+
+```text
+I want a dark thriller with a twist. What would you recommend based on my taste?
+```
+
+```text
+Find me a movie with themes similar to Alien that I haven't watched.
+```
+
+### 6. Multi-turn Recommendation Explanation
+
+Ask this first:
+
+```text
+Recommend 3 movies for me.
+```
+
+Then ask a follow-up in the same session:
+
+```text
+Why did you recommend the first one?
+```
+
 ## Run Tests
 
 Run the pytest suite:
