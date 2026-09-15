@@ -8,5 +8,5 @@ def create_llm() -> ChatGroq:
         model="openai/gpt-oss-120b",
         groq_api_key=GROQ_API_KEY,
         temperature=0,
-        max_tokens=1024,
+        max_tokens=512,
     )

@@ -109,6 +109,69 @@ def test_movie_info_tool_returns_metadata(monkeypatch):
     assert result["summaries"][0]["title"] == "Heat"
 
 
+def test_movie_title_resolution_uses_canonical_titles(monkeypatch):
+    def read_csv(path):
+        if str(path).endswith("movies_with_plots.csv"):
+            return pd.DataFrame({
+                "movieId": [1, 2, 3],
+                "title": ["Heat (1995)", "Body Heat (1981)", "Toy Story (1995)"],
+                "year": [1995, 1981, 1995],
+                "genres": ["Action", "Crime", "Animation"],
+                "plot": ["A detective pursues a thief.", "Noir thriller.", "Toys become friends."],
+            })
+        return pd.DataFrame({"movieId": [], "rating": []})
+
+    monkeypatch.setattr(movie_data_tools.pd, "read_csv", read_csv)
+
+    resolved = movie_data_tools.resolve_movie_titles(
+        "Cho tôi biết phim Heat nói về gì?",
+        ["Heat"],
+    )
+    assert resolved == ["Heat (1995)"]
+    assert movie_data_tools.get_movie_summary(resolved)["summaries"][0]["title"] == "Heat (1995)"
+
+
+def test_movie_title_resolution_handles_trailing_articles(monkeypatch):
+    monkeypatch.setattr(movie_data_tools.pd, "read_csv", lambda _: pd.DataFrame({
+        "movieId": [318, 81520],
+        "title": ["Shawshank Redemption, The", "Undisputed III: Redemption"],
+        "year": [1994, 2010],
+        "genres": ["Crime|Drama", "Action|Crime|Drama"],
+        "plot": ["Andy and Red survive prison through hope.", "A prison fighting story."],
+    }))
+
+    resolved = movie_data_tools.resolve_movie_titles(
+        "What is The Shawshank Redemption about?",
+        ["The Shawshank Redemption"],
+    )
+    assert resolved == ["Shawshank Redemption, The"]
+    summary = movie_data_tools.get_movie_summary(resolved)
+    assert summary["summaries"][0]["movie_id"] == 318
+
+
+def test_movie_title_resolution_handles_typos_with_fuzzy_match(monkeypatch):
+    monkeypatch.setattr(movie_data_tools.pd, "read_csv", lambda _: pd.DataFrame({
+        "movieId": [318, 81520],
+        "title": ["Shawshank Redemption, The", "Undisputed III: Redemption"],
+        "year": [1994, 2010],
+        "genres": ["Crime|Drama", "Action|Crime|Drama"],
+        "plot": ["Andy and Red survive prison through hope.", "A prison fighting story."],
+    }))
+
+    resolved = movie_data_tools.resolve_movie_titles(
+        "What is Shawshnk Redemtion about?",
+        ["Shawshnk Redemtion"],
+    )
+    evidence = movie_data_tools.get_title_resolution_evidence(
+        "What is Shawshnk Redemtion about?",
+        ["Shawshnk Redemtion"],
+    )
+
+    assert resolved == ["Shawshank Redemption, The"]
+    assert evidence["matches"][0]["match_type"] == "fuzzy"
+    assert evidence["matches"][0]["confidence"] >= 0.82
+
+
 def test_user_rating_history_tool_returns_actions(monkeypatch):
     def read_csv(path):
         if str(path).endswith("ratings.csv"):

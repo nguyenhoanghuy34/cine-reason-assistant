@@ -5,6 +5,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.agent.tools.movie_data_tools import _title_variants
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -262,7 +264,8 @@ def get_movie_opinions(user_ids: list[int], titles: list[str]) -> dict[str, Any]
     ratings = pd.read_csv(DATA_DIR / "ratings.csv")
     results = []
     for title in titles:
-        matches = movies[movies["title"].str.contains(title, case=False, regex=False, na=False)]
+        requested = _title_variants(title)
+        matches = movies[movies["title"].map(lambda value: bool(_title_variants(value) & requested))]
         selected = ratings[
             ratings["userId"].isin(user_ids) & ratings["movieId"].isin(matches["movieId"])
         ].merge(matches[["movieId", "title"]], on="movieId")
