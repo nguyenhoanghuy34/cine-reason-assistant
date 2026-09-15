@@ -6,6 +6,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent import graph
 from app.agent.nodes import personal
+from app.agent.router.intent_router import _fallback_intent
 from app.agent.tools import blind_spot_tools
 from app.agent.tools import movie_data_tools
 from app.agent.tools import recommendation_tools
@@ -21,17 +22,23 @@ def test_related_users_exclude_only_current_user(monkeypatch):
     assert related_user_tools.get_related_user_ids(15) == [2, 7]
 
 
+def test_rating_history_question_routes_to_personal_without_llm():
+    result = _fallback_intent("What movies have I rated highly?")
+    assert result.intent == "PERSONAL"
+    assert result.needs_user_behavior is True
+
+
 def test_memory_keeps_repeated_turns_and_isolates_users(monkeypatch):
     monkeypatch.setattr(graph.router, "route", lambda state: {"intent": "GENERAL", "evidence": {}})
     monkeypatch.setattr(graph, "general_node", lambda state: {"response": "Zodiac"})
     monkeypatch.setattr(graph, "agent", graph.build_graph(MemorySaver()))
-    first = graph.invoke_with_memory(15, "Gợi ý phim")
-    second = graph.invoke_with_memory(15, "Gợi ý phim")
-    other = graph.invoke_with_memory(2, "Vì sao?")
+    first = graph.invoke_with_memory(15, "Recommend a movie")
+    second = graph.invoke_with_memory(15, "Recommend a movie")
+    other = graph.invoke_with_memory(2, "Why?")
     assert len(first["chat_history"]) == 2
     assert len(second["chat_history"]) == 4
-    assert second["chat_history"].count("User: Gợi ý phim") == 2
-    assert other["chat_history"] == ["User: Vì sao?", "Assistant: Zodiac"]
+    assert second["chat_history"].count("User: Recommend a movie") == 2
+    assert other["chat_history"] == ["User: Why?", "Assistant: Zodiac"]
 
 
 def test_personal_recommendations_receive_candidates_and_history(monkeypatch):
@@ -44,11 +51,11 @@ def test_personal_recommendations_receive_candidates_and_history(monkeypatch):
     monkeypatch.setattr(personal, "llm_answer_node", answer)
     personal.personal_node({"user_id": 15, "query": "Gợi ý tiếp", "needs_recommendations": True,
                             "excluded_genres": ["Animation"],
-                            "chat_history": ["User: Tôi thích hoạt hình."]})
+                            "chat_history": ["User: I like animated movies."]})
     supplied = answer.call_args.args[0]
     assert supplied["evidence"]["recommendations"]["candidate_movies"]
     assert supplied["evidence"]["recommendations"]["constraints"]["excluded_genres"] == ["Animation"]
-    assert supplied["chat_history"] == ["User: Tôi thích hoạt hình."]
+    assert supplied["chat_history"] == ["User: I like animated movies."]
 
 
 def test_recommendation_constraints_filter_excluded_genres(monkeypatch):
@@ -124,7 +131,7 @@ def test_movie_title_resolution_uses_canonical_titles(monkeypatch):
     monkeypatch.setattr(movie_data_tools.pd, "read_csv", read_csv)
 
     resolved = movie_data_tools.resolve_movie_titles(
-        "Cho tôi biết phim Heat nói về gì?",
+        "What is Heat about?",
         ["Heat"],
     )
     assert resolved == ["Heat (1995)"]
@@ -205,14 +212,14 @@ def test_memory_survives_reopening_database(monkeypatch):
     connection = sqlite3.connect(path, check_same_thread=False)
     try:
         monkeypatch.setattr(graph, "agent", graph.build_graph(SqliteSaver(connection)))
-        graph.invoke_with_memory(15, "Tôi thích trinh thám")
+        graph.invoke_with_memory(15, "I like mystery movies")
     finally:
         connection.close()
     connection = sqlite3.connect(path, check_same_thread=False)
     try:
         monkeypatch.setattr(graph, "agent", graph.build_graph(SqliteSaver(connection)))
-        result = graph.invoke_with_memory(15, "Tôi thích gì?")
-        assert result["chat_history"][0] == "User: Tôi thích trinh thám"
+        result = graph.invoke_with_memory(15, "What do I like?")
+        assert result["chat_history"][0] == "User: I like mystery movies"
         assert len(result["chat_history"]) == 4
     finally:
         connection.close()

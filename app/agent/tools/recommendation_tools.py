@@ -184,6 +184,9 @@ def _score_candidates(candidates: pd.DataFrame, constraints: dict[str, Any]) -> 
         candidates = candidates[
             candidates["_genre_text"].map(lambda text: any(term in text for term in preferred_genres))
         ]
+    if candidates.empty:
+        candidates["_constraint_score"] = []
+        return candidates
 
     def score(row) -> int:
         text = row["_search_text"]

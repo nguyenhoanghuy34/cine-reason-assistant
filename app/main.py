@@ -125,7 +125,7 @@ def print_result(result: dict) -> None:
 
 
 def run_chat(user_id: int, thread_id: str = "default") -> None:
-    print("Nhap cau hoi ve phim; nhap /exit de ket thuc.")
+    print("Ask a movie question; type /exit to quit.")
     print(f"User {user_id} | Session: {thread_id}")
     while True:
         query = input("You: ").strip()
@@ -136,7 +136,7 @@ def run_chat(user_id: int, thread_id: str = "default") -> None:
         try:
             result = invoke_with_memory(user_id, query, thread_id)
         except Exception as exc:
-            print(f"Khong hoan tat luot hoi: {exc}")
+            print(f"Could not complete the turn: {exc}")
             continue
         print_result(result)
 
@@ -148,8 +148,8 @@ if __name__ == "__main__":
                 user_id = int(input("User ID: ").strip())
                 break
             except ValueError:
-                print("User ID phai la so nguyen.")
+                print("User ID must be an integer.")
         thread_id = input("Session name (Enter = default, reuse name to continue): ").strip() or "default"
         run_chat(user_id, thread_id)
     except (KeyboardInterrupt, EOFError):
-        print("\nDa ket thuc hoi thoai.")
+        print("\nConversation ended.")

@@ -32,7 +32,7 @@ OTHER
   specialized categories above.
 
 Important:
-- Understand any language, including Vietnamese, and resolve follow-up references
+- Understand English questions and resolve follow-up references
   using both previous user questions and assistant answers.
 - Extract target_user_ids only for explicitly identified dataset users. Keep the
   current user identity separate. For unnamed people do not guess an ID; the
@@ -59,7 +59,11 @@ Important:
   requires personal information.
 - Do not answer the user's question.
 - Do not recommend movies.
-- Return only the structured classification.
+- Return only valid JSON with exactly these keys:
+  intent, reason, target_user_ids, movie_titles, preferred_genres,
+  excluded_genres, include_terms, exclude_terms, needs_recommendations,
+  needs_genre_analysis, needs_movie_info, needs_movie_summary,
+  needs_user_behavior, needs_similarity.
 
 User ID:
 {user_id}

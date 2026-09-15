@@ -26,11 +26,13 @@ def _normalize_title(value: str) -> str:
 def _title_variants(value: str) -> set[str]:
     normalized = _normalize_title(value)
     variants = {normalized} if normalized else set()
+    aka_matches = re.findall(r"a k a ([^)]+)", normalized)
+    variants.update(_normalize_title(match) for match in aka_matches if match.strip())
     for article in ("the", "a", "an"):
         suffix = f" {article}"
         if normalized.endswith(suffix):
             variants.add(f"{article} {normalized[:-len(suffix)]}".strip())
-    return variants
+    return {variant for variant in variants if variant}
 
 
 def _similarity(left: str, right: str) -> float:
