@@ -63,9 +63,9 @@ def get_related_user_ids(
         return []
 
     return [
-        int(user_id)
-        for user_id in related_user_ids
-        if int(user_id) != user_id
+        int(related_id)
+        for related_id in related_user_ids
+        if int(related_id) != user_id
     ]
 
 
@@ -254,3 +254,21 @@ def get_top_movies_from_related_users(
         "related_user_ids": related_user_ids,
         "movies": movie_evidence,
     }
+
+
+def get_movie_opinions(user_ids: list[int], titles: list[str]) -> dict[str, Any]:
+    """Retrieve all recorded ratings for requested films, including low ratings."""
+    movies = pd.read_csv(DATA_DIR / "movies.csv")
+    ratings = pd.read_csv(DATA_DIR / "ratings.csv")
+    results = []
+    for title in titles:
+        matches = movies[movies["title"].str.contains(title, case=False, regex=False, na=False)]
+        selected = ratings[
+            ratings["userId"].isin(user_ids) & ratings["movieId"].isin(matches["movieId"])
+        ].merge(matches[["movieId", "title"]], on="movieId")
+        results.append({
+            "requested_title": title,
+            "matched_movies": matches[["movieId", "title"]].to_dict("records"),
+            "ratings": selected[["userId", "movieId", "title", "rating"]].to_dict("records"),
+        })
+    return {"user_ids": user_ids, "results": results}

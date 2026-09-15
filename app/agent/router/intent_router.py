@@ -27,13 +27,20 @@ class IntentRouter:
 
         if user_id is not None:
 
-            user_profile = get_user_profile(
-                user_id
-            )
+            try:
+                user_profile = get_user_profile(user_id)
+            except (FileNotFoundError, ValueError):
+                user_profile = {"user_id": user_id, "status": "profile unavailable"}
+
+        history = state.get("chat_history", [])
+        history_text = "\n".join(
+            f"- {item}" for item in history if isinstance(item, str) and item.strip()
+        )
 
         prompt = INTENT_ROUTER_PROMPT.format(
             user_id=user_id,
             query=query,
+            chat_history=history_text or "No previous conversation yet.",
             user_summary=user_profile,
         )
 
@@ -45,4 +52,15 @@ class IntentRouter:
             **state,
             "intent": result.intent,
             "intent_reason": result.reason,
+            "target_user_ids": result.target_user_ids,
+            "movie_titles": result.movie_titles,
+            "preferred_genres": result.preferred_genres,
+            "excluded_genres": result.excluded_genres,
+            "include_terms": result.include_terms,
+            "exclude_terms": result.exclude_terms,
+            "needs_recommendations": result.needs_recommendations,
+            "needs_genre_analysis": result.needs_genre_analysis,
+            "evidence": {},
+            "related_users_evidence": {},
+            "response": "",
         }

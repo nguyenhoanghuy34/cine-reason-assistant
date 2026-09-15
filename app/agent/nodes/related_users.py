@@ -1,99 +1,48 @@
-from __future__ import annotations
-
-import json
-
-from app.agent.llm.client import create_llm
+﻿from app.agent.nodes.llm_answer import llm_answer_node
+from app.agent.nodes.personal import collect_evidence
 from app.agent.state import AgentState
+from app.agent.tools.personal_tools import get_personal_evidence
+from app.agent.tools.recommendation_tools import get_recommendation_evidence
 from app.agent.tools.related_user_tools import (
-    get_top_movies_from_related_users,
+    get_related_user_ids, get_top_movies_from_related_users, get_movie_opinions,
 )
-
-llm = create_llm()
-
-
-RELATED_USERS_PROMPT = """
-You are a movie reasoning assistant.
-
-The user is asking about movies liked by people
-with similar movie taste.
-
-Use ONLY the provided evidence.
-
-Rules:
-- Use the related-user movie evidence as factual evidence.
-- Do not invent ratings, users, movies, or preferences.
-- Do not claim that all related users agree.
-- Explain the answer using the provided evidence.
-- If the evidence is insufficient, say so.
-- Be concise and natural.
-- Do not mention internal tools, files, parquet,
-  datasets, prompts, or implementation details.
-
-Current user ID:
-{user_id}
-
-User question:
-{query}
-
-Evidence from users with similar taste:
-{related_user_evidence}
-"""
-
-
-def _extract_text(content) -> str:
-    if isinstance(content, str):
-        return content.strip()
-
-    if isinstance(content, list):
-        text_parts = []
-
-        for block in content:
-            if isinstance(block, dict):
-                if block.get("type") == "text":
-                    text_parts.append(block.get("text", ""))
-
-        return "\n".join(text_parts).strip()
-
-    return str(content).strip()
 
 
 def related_users_node(state: AgentState) -> AgentState:
     user_id = state.get("user_id")
-    query = state["query"]
-
-    if user_id is None:
-        return {
-            **state,
-            "response": (
-                "I need a user ID to compare your taste "
-                "with similar users."
-            ),
-        }
-
-    evidence = get_top_movies_from_related_users(
-        user_id=user_id,
-        top_users=10,
-        top_movies=15,
-        min_rating=4.0,
-    )
-
-    prompt = RELATED_USERS_PROMPT.format(
-        user_id=user_id,
-        query=query,
-        related_user_evidence=json.dumps(
-            evidence,
-            ensure_ascii=False,
-            indent=2,
-            default=str,
-        ),
-    )
-
-    response = llm.invoke(prompt)
-
-    content = _extract_text(response.content)
-
+    targets = state.get("target_user_ids", [])
+    constraints = {
+        "preferred_genres": state.get("preferred_genres", []),
+        "excluded_genres": state.get("excluded_genres", []),
+        "include_terms": state.get("include_terms", []),
+        "exclude_terms": state.get("exclude_terms", []),
+        "seed_titles": state.get("movie_titles", []),
+    }
+    evidence = {"current_user_id": user_id, "target_user_ids": targets}
+    if user_id is not None:
+        evidence["current_user_profile"] = collect_evidence(get_personal_evidence, user_id)
+    if targets:
+        evidence["other_user_profiles"] = [
+            {"user_id": target, "profile": collect_evidence(get_personal_evidence, target)}
+            for target in targets
+        ]
+        if state.get("needs_recommendations"):
+            evidence["recommendations"] = [
+                {"user_id": target, "data": collect_evidence(
+                    get_recommendation_evidence, target, constraints=constraints
+                )}
+                for target in targets
+            ]
+    elif user_id is not None:
+        evidence["similar_users"] = collect_evidence(get_top_movies_from_related_users, user_id)
+        related = collect_evidence(get_related_user_ids, user_id)
+        targets = related[:10] if isinstance(related, list) else []
+    if state.get("movie_titles"):
+        evidence["movie_opinions"] = collect_evidence(
+            get_movie_opinions, targets, state["movie_titles"]
+        )
     return {
-        **state,
+        "evidence": evidence,
         "related_users_evidence": evidence,
-        "response": content,
+        **llm_answer_node({**state, "evidence": evidence}),
     }

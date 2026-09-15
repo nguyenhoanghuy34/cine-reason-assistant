@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -27,10 +28,7 @@ def get_user_profile(user_id: int) -> dict[str, Any]:
     )
 
     if not temp_path.exists():
-        raise FileNotFoundError(
-            f"Temporary data for user {user_id} not found: "
-            f"{temp_path}"
-        )
+        temp_path = PROJECT_ROOT / "app" / "data" / "clean-data" / "user_profiles.parquet"
 
     data = pd.read_parquet(temp_path)
 
@@ -43,17 +41,15 @@ def get_user_profile(user_id: int) -> dict[str, Any]:
 
     row = row.iloc[0]
 
-    return {
-        "user_id": int(row["user_id"]),
-        "high_rated_genres": row["high_rated_genres"],
-        "high_rated_movies": row["high_rated_movies"],
-        "user_tags": row["user_tags"],
-        "low_rated_genres": row["low_rated_genres"],
-        "unwatched_matching_movie_ids": row[
-            "unwatched_matching_movie_ids"
-        ],
-        "top_2_genres": row["top_2_genres"],
-    }
+    # Normalize parquet arrays and scalars for prompts and checkpoint storage.
+    return json.loads(row.to_frame().T.to_json(orient="records"))[0]
+
+
+def get_personal_evidence(user_id: int) -> dict[str, Any]:
+    """
+    Return the structured user profile data used by personalized movie prompts.
+    """
+    return get_user_profile(user_id)
 
 
 def get_user_summary(user_id: int) -> str:

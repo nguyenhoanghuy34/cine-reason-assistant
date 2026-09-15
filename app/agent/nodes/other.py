@@ -1,12 +1,6 @@
+﻿from app.agent.nodes.llm_answer import llm_answer_node
 from app.agent.state import AgentState
 
 
 def other_node(state: AgentState) -> AgentState:
-    return {
-        **state,
-        "response": (
-            "[OTHER ROUTE]\n"
-            "This request is valid but is not supported by "
-            "the current specialized routes yet."
-        ),
-    }
+    return llm_answer_node(state)

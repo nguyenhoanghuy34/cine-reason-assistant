@@ -11,27 +11,15 @@ PROJECT_ROOT = Path(
     r"D:\Subject\HOME_TEST\cine-reason-assistant"
 )
 
-RAW_DIR = (
-    PROJECT_ROOT
-    / "app"
-    / "data"
-    / "ml-latest-small-filtered"
-)
+RAW_DIR = PROJECT_ROOT / "app" / "data" / "ml-latest-small-filtered"
 
-OUTPUT_DIR = (
-    PROJECT_ROOT
-    / "app"
-    / "data"
-    / "clean-data"
-)
+OUTPUT_DIR = PROJECT_ROOT / "app" / "data" / "clean-data"
 
 RATINGS_FILE = RAW_DIR / "ratings.csv"
 MOVIES_FILE = RAW_DIR / "movies_with_plots.csv"
 TAGS_FILE = RAW_DIR / "tags.csv"
 
-OUTPUT_FILE = (
-    OUTPUT_DIR / "user_profiles.parquet"
-)
+OUTPUT_FILE = OUTPUT_DIR / "user_profiles.parquet"
 
 
 # ============================================================
@@ -42,22 +30,15 @@ HIGH_RATING_THRESHOLD = 4.0
 LOW_RATING_THRESHOLD = 3.0
 TOP_GENRES = 2
 
+# 1 <= watch_count <= 2 -> underexposed
+UNDEREXPOSED_WATCH_THRESHOLD = 2
+
 
 # ============================================================
 # HELPERS
 # ============================================================
 
 def split_genres(value):
-    """
-    Convert:
-
-        Action|Comedy|Drama
-
-    into:
-
-        ['Action', 'Comedy', 'Drama']
-    """
-
     if pd.isna(value):
         return []
 
@@ -74,10 +55,6 @@ def split_genres(value):
 
 
 def unique_preserve_order(values):
-    """
-    Remove duplicates while preserving order.
-    """
-
     seen = set()
     result = []
 
@@ -126,13 +103,6 @@ def load_raw_tables():
 # ============================================================
 
 def prepare_movies(movies):
-    """
-    Temporary movie table.
-
-    Keeps only the information required for
-    user-profile construction.
-    """
-
     print()
     print("=" * 70)
     print("STEP 2 - PREPARE MOVIE TABLE")
@@ -140,10 +110,7 @@ def prepare_movies(movies):
 
     movies = movies.copy()
 
-    movies["movieId"] = (
-        movies["movieId"]
-        .astype(int)
-    )
+    movies["movieId"] = movies["movieId"].astype(int)
 
     movies["genres_list"] = (
         movies["genres"]
@@ -165,7 +132,7 @@ def prepare_movies(movies):
     )
 
     print(
-        f"Unique movie IDs        : "
+        f"Unique movie IDs         : "
         f"{movies_temp['movieId'].nunique():,}"
     )
 
@@ -177,10 +144,6 @@ def prepare_movies(movies):
 # ============================================================
 
 def prepare_ratings(ratings):
-    """
-    Temporary ratings table.
-    """
-
     print()
     print("=" * 70)
     print("STEP 3 - PREPARE RATINGS TABLE")
@@ -188,20 +151,9 @@ def prepare_ratings(ratings):
 
     ratings = ratings.copy()
 
-    ratings["userId"] = (
-        ratings["userId"]
-        .astype(int)
-    )
-
-    ratings["movieId"] = (
-        ratings["movieId"]
-        .astype(int)
-    )
-
-    ratings["rating"] = (
-        ratings["rating"]
-        .astype(float)
-    )
+    ratings["userId"] = ratings["userId"].astype(int)
+    ratings["movieId"] = ratings["movieId"].astype(int)
+    ratings["rating"] = ratings["rating"].astype(float)
 
     print(
         f"Temporary ratings table : "
@@ -209,12 +161,12 @@ def prepare_ratings(ratings):
     )
 
     print(
-        f"Unique users            : "
+        f"Unique users             : "
         f"{ratings['userId'].nunique():,}"
     )
 
     print(
-        f"Unique movies rated     : "
+        f"Unique movies rated      : "
         f"{ratings['movieId'].nunique():,}"
     )
 
@@ -226,23 +178,6 @@ def prepare_ratings(ratings):
 # ============================================================
 
 def create_user_movie_table(ratings, movies):
-    """
-    Join:
-
-        ratings
-            +
-        movies
-
-    Result:
-
-        userId
-        movieId
-        rating
-        title
-        genres
-        genres_list
-    """
-
     print()
     print("=" * 70)
     print("STEP 4 - CREATE USER-MOVIE TABLE")
@@ -267,7 +202,7 @@ def create_user_movie_table(ratings, movies):
     )
 
     print(
-        f"Missing movie metadata  : "
+        f"Missing movie metadata   : "
         f"{missing_movies:,}"
     )
 
@@ -285,22 +220,17 @@ def create_user_movie_table(ratings, movies):
 # ============================================================
 
 def create_high_rated_table(user_movies):
-    """
-    Movies rated >= 4 stars.
-    """
-
     print()
     print("=" * 70)
     print("STEP 5 - HIGH-RATED MOVIES")
     print("=" * 70)
 
     high_rated = user_movies[
-        user_movies["rating"]
-        >= HIGH_RATING_THRESHOLD
+        user_movies["rating"] >= HIGH_RATING_THRESHOLD
     ].copy()
 
     print(
-        f"High-rated rows        : "
+        f"High-rated rows         : "
         f"{len(high_rated):,}"
     )
 
@@ -317,22 +247,17 @@ def create_high_rated_table(user_movies):
 # ============================================================
 
 def create_low_rated_table(user_movies):
-    """
-    Movies rated <= 3 stars.
-    """
-
     print()
     print("=" * 70)
     print("STEP 6 - LOW-RATED MOVIES")
     print("=" * 70)
 
     low_rated = user_movies[
-        user_movies["rating"]
-        <= LOW_RATING_THRESHOLD
+        user_movies["rating"] <= LOW_RATING_THRESHOLD
     ].copy()
 
     print(
-        f"Low-rated rows         : "
+        f"Low-rated rows          : "
         f"{len(low_rated):,}"
     )
 
@@ -344,12 +269,6 @@ def create_low_rated_table(user_movies):
 # ============================================================
 
 def create_user_tags_table(tags):
-    """
-    Temporary table:
-
-        userId -> unique tags
-    """
-
     print()
     print("=" * 70)
     print("STEP 7 - USER TAGS")
@@ -357,10 +276,7 @@ def create_user_tags_table(tags):
 
     tags = tags.copy()
 
-    tags["userId"] = (
-        tags["userId"]
-        .astype(int)
-    )
+    tags["userId"] = tags["userId"].astype(int)
 
     tags = tags[
         tags["tag"].notna()
@@ -389,12 +305,12 @@ def create_user_tags_table(tags):
     )
 
     print(
-        f"Users with tags        : "
+        f"Users with tags         : "
         f"{len(user_tags):,}"
     )
 
     print(
-        f"Tag rows used           : "
+        f"Tag rows used            : "
         f"{len(tags):,}"
     )
 
@@ -406,21 +322,12 @@ def create_user_tags_table(tags):
 # ============================================================
 
 def get_high_rated_genres(user_high_rated):
-    """
-    Get unique genres from movies
-    rated >= 4 stars.
-    """
-
     genres = []
 
-    for movie_genres in (
-        user_high_rated["genres_list"]
-    ):
+    for movie_genres in user_high_rated["genres_list"]:
         genres.extend(movie_genres)
 
-    return unique_preserve_order(
-        genres
-    )
+    return unique_preserve_order(genres)
 
 
 # ============================================================
@@ -428,21 +335,12 @@ def get_high_rated_genres(user_high_rated):
 # ============================================================
 
 def get_low_rated_genres(user_low_rated):
-    """
-    Get unique genres from movies
-    rated <= 3 stars.
-    """
-
     genres = []
 
-    for movie_genres in (
-        user_low_rated["genres_list"]
-    ):
+    for movie_genres in user_low_rated["genres_list"]:
         genres.extend(movie_genres)
 
-    return unique_preserve_order(
-        genres
-    )
+    return unique_preserve_order(genres)
 
 
 # ============================================================
@@ -450,24 +348,12 @@ def get_low_rated_genres(user_low_rated):
 # ============================================================
 
 def get_top_2_genres(user_movies):
-    """
-    Count genres across all movies rated by the user.
-
-    Ranking:
-
-        1. Higher frequency
-        2. Alphabetical order for ties
-    """
-
     genre_counts = {}
 
-    for movie_genres in (
-        user_movies["genres_list"]
-    ):
+    for movie_genres in user_movies["genres_list"]:
         for genre in movie_genres:
             genre_counts[genre] = (
-                genre_counts.get(genre, 0)
-                + 1
+                genre_counts.get(genre, 0) + 1
             )
 
     sorted_genres = sorted(
@@ -480,14 +366,192 @@ def get_top_2_genres(user_movies):
 
     return [
         genre
-        for genre, _ in sorted_genres[
-            :TOP_GENRES
-        ]
+        for genre, _ in sorted_genres[:TOP_GENRES]
     ]
 
 
 # ============================================================
-# 11. UNWATCHED MATCHING MOVIES
+# 11. GENRE WATCH COUNTS
+# ============================================================
+
+def get_genre_watch_counts(user_movies):
+    genre_counts = {}
+
+    for movie_genres in user_movies["genres_list"]:
+        for genre in movie_genres:
+            genre_counts[genre] = (
+                genre_counts.get(genre, 0) + 1
+            )
+
+    return dict(
+        sorted(
+            genre_counts.items(),
+            key=lambda item: (
+                -item[1],
+                item[0],
+            ),
+        )
+    )
+
+
+# ============================================================
+# 12. GENRE AVERAGE RATINGS
+# ============================================================
+
+def get_genre_avg_ratings(user_movies):
+    genre_ratings = {}
+
+    for _, row in user_movies.iterrows():
+        rating = float(row["rating"])
+
+        for genre in row["genres_list"]:
+            if genre not in genre_ratings:
+                genre_ratings[genre] = []
+
+            genre_ratings[genre].append(rating)
+
+    genre_avg_ratings = {}
+
+    for genre, ratings in genre_ratings.items():
+        genre_avg_ratings[genre] = round(
+            sum(ratings) / len(ratings),
+            3,
+        )
+
+    return dict(
+        sorted(
+            genre_avg_ratings.items(),
+            key=lambda item: (
+                -item[1],
+                item[0],
+            ),
+        )
+    )
+
+
+# ============================================================
+# 13. GENRE HIGH-RATED COUNTS
+# ============================================================
+
+def get_genre_high_rated_counts(user_movies):
+    genre_counts = {}
+
+    for _, row in user_movies.iterrows():
+
+        rating = float(row["rating"])
+
+        if rating < HIGH_RATING_THRESHOLD:
+            continue
+
+        for genre in row["genres_list"]:
+            genre_counts[genre] = (
+                genre_counts.get(genre, 0) + 1
+            )
+
+    return dict(
+        sorted(
+            genre_counts.items(),
+            key=lambda item: (
+                -item[1],
+                item[0],
+            ),
+        )
+    )
+
+
+# ============================================================
+# 14. GENRE HIGH-RATING RATIO
+# ============================================================
+
+def get_genre_high_rating_ratio(
+    genre_watch_counts,
+    genre_high_rated_counts,
+):
+    ratios = {}
+
+    for genre, watch_count in genre_watch_counts.items():
+
+        high_count = (
+            genre_high_rated_counts.get(
+                genre,
+                0,
+            )
+        )
+
+        if watch_count == 0:
+            ratio = 0.0
+        else:
+            ratio = high_count / watch_count
+
+        ratios[genre] = round(
+            ratio,
+            3,
+        )
+
+    return dict(
+        sorted(
+            ratios.items(),
+            key=lambda item: (
+                -item[1],
+                item[0],
+            ),
+        )
+    )
+
+
+# ============================================================
+# 15. ALL DATASET GENRES
+# ============================================================
+
+def get_all_genres(movies):
+    all_genres = set()
+
+    for movie_genres in movies["genres_list"]:
+        all_genres.update(movie_genres)
+
+    return sorted(all_genres)
+
+
+# ============================================================
+# 16. UNWATCHED GENRES
+# ============================================================
+
+def get_unwatched_genres(
+    all_genres,
+    genre_watch_counts,
+):
+    return [
+        genre
+        for genre in all_genres
+        if genre_watch_counts.get(
+            genre,
+            0,
+        ) == 0
+    ]
+
+
+# ============================================================
+# 17. UNDEREXPOSED GENRES
+# ============================================================
+
+def get_underexposed_genres(
+    all_genres,
+    genre_watch_counts,
+):
+    return [
+        genre
+        for genre in all_genres
+        if 1
+        <= genre_watch_counts.get(
+            genre,
+            0,
+        )
+        <= UNDEREXPOSED_WATCH_THRESHOLD
+    ]
+
+
+# ============================================================
+# 18. UNWATCHED MATCHING MOVIES
 # ============================================================
 
 def get_unwatched_matching_movie_ids(
@@ -495,43 +559,14 @@ def get_unwatched_matching_movie_ids(
     movies,
     high_rated_genres,
 ):
-    """
-    Find movies that:
-
-        1. The user has NOT rated
-        2. The movie has at least one genre
-           matching the user's high-rated genres
-
-    Example:
-
-        User high-rated genres:
-            ['Action', 'Thriller']
-
-        Candidate:
-            Movie 100 -> Action
-            Movie 200 -> Comedy
-            Movie 300 -> Thriller
-
-        Result:
-            [100, 300]
-    """
-
     if not high_rated_genres:
         return []
-
-    # --------------------------------------------------------
-    # Movies already rated by this user
-    # --------------------------------------------------------
 
     watched_movie_ids = set(
         user_movies["movieId"]
         .astype(int)
         .tolist()
     )
-
-    # --------------------------------------------------------
-    # Movies not rated by this user
-    # --------------------------------------------------------
 
     unwatched_movies = movies[
         ~movies["movieId"].isin(
@@ -542,19 +577,14 @@ def get_unwatched_matching_movie_ids(
     if unwatched_movies.empty:
         return []
 
-    # --------------------------------------------------------
-    # Match genre
-    # --------------------------------------------------------
-
     high_genres = set(
         high_rated_genres
     )
 
     matching_movie_ids = []
 
-    for _, movie in (
-        unwatched_movies.iterrows()
-    ):
+    for _, movie in unwatched_movies.iterrows():
+
         movie_genres = set(
             movie["genres_list"]
         )
@@ -570,7 +600,7 @@ def get_unwatched_matching_movie_ids(
 
 
 # ============================================================
-# 12. BUILD FINAL USER PROFILES
+# 19. BUILD FINAL USER PROFILES
 # ============================================================
 
 def build_user_profiles(
@@ -578,24 +608,17 @@ def build_user_profiles(
     movies,
     user_tags,
 ):
-    """
-    Build final profile table.
-
-    Final columns:
-
-        user_id
-        high_rated_genres
-        high_rated_movies
-        user_tags
-        low_rated_genres
-        unwatched_matching_movie_ids
-        top_2_genres
-    """
-
     print()
     print("=" * 70)
     print("STEP 8 - BUILD USER PROFILES")
     print("=" * 70)
+
+    all_genres = get_all_genres(movies)
+
+    print(
+        f"All dataset genres      : "
+        f"{len(all_genres):,}"
+    )
 
     profiles = []
 
@@ -610,8 +633,7 @@ def build_user_profiles(
         # ----------------------------------------------------
 
         high_rated = user_df[
-            user_df["rating"]
-            >= HIGH_RATING_THRESHOLD
+            user_df["rating"] >= HIGH_RATING_THRESHOLD
         ].copy()
 
         high_rated_movies = (
@@ -637,13 +659,16 @@ def build_user_profiles(
         )
 
         # ----------------------------------------------------
-        # Low-rated genres
+        # Low-rated movies
         # ----------------------------------------------------
 
         low_rated = user_df[
-            user_df["rating"]
-            <= LOW_RATING_THRESHOLD
+            user_df["rating"] <= LOW_RATING_THRESHOLD
         ].copy()
+
+        # ----------------------------------------------------
+        # Low-rated genres
+        # ----------------------------------------------------
 
         low_rated_genres = (
             get_low_rated_genres(
@@ -671,6 +696,69 @@ def build_user_profiles(
         )
 
         # ----------------------------------------------------
+        # Genre watch counts
+        # ----------------------------------------------------
+
+        genre_watch_counts = (
+            get_genre_watch_counts(
+                user_df
+            )
+        )
+
+        # ----------------------------------------------------
+        # Genre average ratings
+        # ----------------------------------------------------
+
+        genre_avg_ratings = (
+            get_genre_avg_ratings(
+                user_df
+            )
+        )
+
+        # ----------------------------------------------------
+        # Genre high-rated counts
+        # ----------------------------------------------------
+
+        genre_high_rated_counts = (
+            get_genre_high_rated_counts(
+                user_df
+            )
+        )
+
+        # ----------------------------------------------------
+        # Genre high-rating ratio
+        # ----------------------------------------------------
+
+        genre_high_rating_ratio = (
+            get_genre_high_rating_ratio(
+                genre_watch_counts,
+                genre_high_rated_counts,
+            )
+        )
+
+        # ----------------------------------------------------
+        # Unwatched genres
+        # ----------------------------------------------------
+
+        unwatched_genres = (
+            get_unwatched_genres(
+                all_genres,
+                genre_watch_counts,
+            )
+        )
+
+        # ----------------------------------------------------
+        # Underexposed genres
+        # ----------------------------------------------------
+
+        underexposed_genres = (
+            get_underexposed_genres(
+                all_genres,
+                genre_watch_counts,
+            )
+        )
+
+        # ----------------------------------------------------
         # Unwatched matching movies
         # ----------------------------------------------------
 
@@ -687,6 +775,7 @@ def build_user_profiles(
         # ----------------------------------------------------
 
         profile = {
+            # Existing variables
             "user_id": user_id,
 
             "high_rated_genres": list(
@@ -712,6 +801,31 @@ def build_user_profiles(
             "top_2_genres": list(
                 top_2_genres
             ),
+
+            # New blind-spot variables
+            "genre_watch_counts": dict(
+                genre_watch_counts
+            ),
+
+            "genre_avg_ratings": dict(
+                genre_avg_ratings
+            ),
+
+            "genre_high_rated_counts": dict(
+                genre_high_rated_counts
+            ),
+
+            "genre_high_rating_ratio": dict(
+                genre_high_rating_ratio
+            ),
+
+            "unwatched_genres": list(
+                unwatched_genres
+            ),
+
+            "underexposed_genres": list(
+                underexposed_genres
+            ),
         }
 
         profiles.append(profile)
@@ -724,14 +838,10 @@ def build_user_profiles(
 
 
 # ============================================================
-# 13. VALIDATE FINAL SCHEMA
+# 20. VALIDATE FINAL SCHEMA
 # ============================================================
 
 def validate_schema(profiles):
-    """
-    Make sure the final Parquet contains exactly
-    the required profile variables.
-    """
 
     expected_columns = [
         "user_id",
@@ -741,11 +851,15 @@ def validate_schema(profiles):
         "low_rated_genres",
         "unwatched_matching_movie_ids",
         "top_2_genres",
+        "genre_watch_counts",
+        "genre_avg_ratings",
+        "genre_high_rated_counts",
+        "genre_high_rating_ratio",
+        "unwatched_genres",
+        "underexposed_genres",
     ]
 
-    actual_columns = (
-        profiles.columns.tolist()
-    )
+    actual_columns = profiles.columns.tolist()
 
     if actual_columns != expected_columns:
         raise ValueError(
@@ -764,10 +878,11 @@ def validate_schema(profiles):
 
 
 # ============================================================
-# 14. SAVE PARQUET
+# 21. SAVE PARQUET
 # ============================================================
 
 def save_profiles(profiles):
+
     OUTPUT_DIR.mkdir(
         parents=True,
         exist_ok=True,
@@ -798,14 +913,10 @@ def save_profiles(profiles):
 
 
 # ============================================================
-# 15. VERIFY SAVED PARQUET
+# 22. VERIFY SAVED PARQUET
 # ============================================================
 
 def verify_saved_profiles():
-    """
-    Read the generated Parquet again and verify
-    that the expected columns exist.
-    """
 
     print()
     print("=" * 70)
@@ -825,6 +936,12 @@ def verify_saved_profiles():
         "low_rated_genres",
         "unwatched_matching_movie_ids",
         "top_2_genres",
+        "genre_watch_counts",
+        "genre_avg_ratings",
+        "genre_high_rated_counts",
+        "genre_high_rating_ratio",
+        "unwatched_genres",
+        "underexposed_genres",
     ]
 
     assert (
@@ -868,17 +985,13 @@ def verify_saved_profiles():
 
 
 # ============================================================
-# 16. PRINT SAMPLE USERS
+# 23. PRINT SAMPLE USERS
 # ============================================================
 
 def print_sample_profiles(
     profiles,
     n=5,
 ):
-    """
-    Print a few profiles for manual inspection.
-    """
-
     print()
     print("=" * 70)
     print(
@@ -890,6 +1003,7 @@ def print_sample_profiles(
         profiles.head(n).iterrows()
     ):
         print()
+
         print(
             f"User ID: {row['user_id']}"
         )
@@ -934,6 +1048,48 @@ def print_sample_profiles(
         )
         print(
             f"  {row['top_2_genres']}"
+        )
+
+        print(
+            "Genre watch counts:"
+        )
+        print(
+            f"  {row['genre_watch_counts']}"
+        )
+
+        print(
+            "Genre average ratings:"
+        )
+        print(
+            f"  {row['genre_avg_ratings']}"
+        )
+
+        print(
+            "Genre high-rated counts:"
+        )
+        print(
+            f"  {row['genre_high_rated_counts']}"
+        )
+
+        print(
+            "Genre high-rating ratio:"
+        )
+        print(
+            f"  {row['genre_high_rating_ratio']}"
+        )
+
+        print(
+            "Unwatched genres:"
+        )
+        print(
+            f"  {row['unwatched_genres']}"
+        )
+
+        print(
+            "Underexposed genres:"
+        )
+        print(
+            f"  {row['underexposed_genres']}"
         )
 
 
@@ -1050,6 +1206,7 @@ def main():
     )
 
     print()
+
     print("=" * 70)
     print("DONE")
     print("=" * 70)

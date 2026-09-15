@@ -17,6 +17,8 @@ class AgentState(TypedDict, total=False):
 
     query: str
 
+    chat_history: list[str]
+
     intent: Intent
 
     intent_reason: str
@@ -26,3 +28,12 @@ class AgentState(TypedDict, total=False):
     evidence: dict[str, Any]
 
     response: str
+
+    target_user_ids: list[int]
+    movie_titles: list[str]
+    preferred_genres: list[str]
+    excluded_genres: list[str]
+    include_terms: list[str]
+    exclude_terms: list[str]
+    needs_recommendations: bool
+    needs_genre_analysis: bool
